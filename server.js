@@ -3,31 +3,28 @@ const session = require('express-session');
 const multer = require('multer');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
+require('dotenv').config(); // 加载 .env
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 创建 uploads 文件夹
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-
-// 设置 Multer 存储策略
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, file.originalname)
+// PostgreSQL 连接
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
-const upload = multer({ storage });
 
-// 中间件
-app.use(express.static(path.join(__dirname, 'client/dist')));
+// multer 设置为内存存储（保存到内存 → 写入数据库）
+const upload = multer({ storage: multer.memoryStorage() });
 
-// app.use(cors());
 app.use(cors({
   origin: 'http://localhost:3000',
-  credentials: true
+  credentials: true,
 }));
 
 app.use(express.json());
@@ -36,35 +33,13 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,         // 本地测试用 false，线上部署时要用 true (https)
+    secure: false,
     httpOnly: true,
-    sameSite: 'lax'        // 或 'none' + secure: true 用于跨域
+    sameSite: 'lax',
   }
 }));
-app.use('/uploads', express.static(uploadDir));
-app.use(express.static(path.join(__dirname, 'client/dist')));
 
-// 数据库初始化
-const db = new sqlite3.Database('audio_project.db');
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE,
-      password_hash TEXT,
-      role TEXT DEFAULT 'user'
-    )
-  `);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS files (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT,
-      path TEXT,
-      upload_time TEXT DEFAULT CURRENT_TIMESTAMP,
-      user_id INTEGER
-    )
-  `);
-});
+app.use(express.static(path.join(__dirname, 'client/dist')));
 
 // 登录校验中间件
 function requireLogin(req, res, next) {
@@ -72,29 +47,31 @@ function requireLogin(req, res, next) {
   next();
 }
 
-// ========== API 路由 ==========
-
 // 注册
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
 
-  db.get('SELECT id FROM users WHERE username = ?', [username], async (err, row) => {
-    if (row) return res.status(409).json({ success: false, message: 'User exists' });
+  try {
+    const userExists = await db.query('SELECT id FROM users WHERE username = $1', [username]);
+    if (userExists.rows.length > 0) return res.status(409).json({ success: false, message: 'User exists' });
 
     const hash = await bcrypt.hash(password, 10);
-    db.run('INSERT INTO users (username, password_hash) VALUES (?, ?)', [username, hash], function (err) {
-      if (err) return res.status(500).json({ success: false, message: 'DB error' });
-      res.json({ success: true, message: 'Registered' });
-    });
-  });
+    await db.query('INSERT INTO users (username, password_hash) VALUES ($1, $2)', [username, hash]);
+    res.json({ success: true, message: 'Registered' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
 });
 
 // 登录
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
 
-  db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
+  try {
+    const result = await db.query('SELECT * FROM users WHERE username = $1', [username]);
+    const user = result.rows[0];
     if (!user) return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
     const match = await bcrypt.compare(password, user.password_hash);
@@ -102,7 +79,9 @@ app.post('/api/login', async (req, res) => {
 
     req.session.user = { id: user.id, username: user.username, role: user.role };
     res.json({ success: true, message: 'Login successful', user: req.session.user });
-  });
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
 });
 
 // 当前用户信息
@@ -117,49 +96,70 @@ app.get('/api/logout', (req, res) => {
   res.json({ success: true, message: 'Logged out' });
 });
 
-// 上传音频
-app.post('/api/upload', requireLogin, upload.single('audio'), (req, res) => {
+// 上传音频（小文件保存为 BYTEA）
+app.post('/api/upload', requireLogin, upload.single('audio'), async (req, res) => {
   const { id } = req.session.user;
-  db.run('INSERT INTO files (name, path, user_id) VALUES (?, ?, ?)',
-    [req.file.originalname, req.file.path, id],
-    err => {
-      if (err) return res.status(500).json({ success: false });
-      res.json({ success: true });
-    });
+  const file = req.file;
+
+  if (!file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+
+  try {
+    await db.query(
+      'INSERT INTO files (name, data, mimetype, user_id) VALUES ($1, $2, $3, $4)',
+      [file.originalname, file.buffer, file.mimetype, id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ success: false });
+  }
 });
 
 // 获取文件列表
-app.get('/api/files', requireLogin, (req, res) => {
+app.get('/api/files', requireLogin, async (req, res) => {
   const user = req.session.user;
   const query = user.role === 'admin'
-    ? `SELECT files.*, users.username FROM files JOIN users ON files.user_id = users.id ORDER BY upload_time DESC`
-    : `SELECT files.*, users.username FROM files JOIN users ON files.user_id = users.id WHERE user_id = ? ORDER BY upload_time DESC`;
-
+    ? `SELECT files.id, files.name, files.upload_time, users.username FROM files JOIN users ON files.user_id = users.id ORDER BY upload_time DESC`
+    : `SELECT files.id, files.name, files.upload_time, users.username FROM files JOIN users ON files.user_id = users.id WHERE user_id = $1 ORDER BY upload_time DESC`;
   const params = user.role === 'admin' ? [] : [user.id];
 
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ success: false });
-    res.json(rows);
-  });
+  try {
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
 });
 
-// 删除文件
-app.delete('/api/files/:id', requireLogin, (req, res) => {
+// 下载音频文件
+app.get('/api/files/:id/download', requireLogin, async (req, res) => {
   const fileId = req.params.id;
-  db.get('SELECT * FROM files WHERE id = ?', [fileId], (err, file) => {
-    if (!file) return res.status(404).json({ success: false });
+  try {
+    const result = await db.query('SELECT name, data, mimetype FROM files WHERE id = $1', [fileId]);
+    if (result.rows.length === 0) return res.status(404).json({ success: false });
 
-    try {
-      fs.unlinkSync(file.path);
-    } catch (e) {
-      console.warn('Could not delete file:', e.message);
-    }
+    const file = result.rows[0];
+    res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+    res.setHeader('Content-Type', file.mimetype || 'application/octet-stream');
+    res.send(file.data);
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
+});
 
-    db.run('DELETE FROM files WHERE id = ?', [fileId], err => {
-      if (err) return res.status(500).json({ success: false });
-      res.json({ success: true });
-    });
-  });
+// 删除音频文件
+app.delete('/api/files/:id', requireLogin, async (req, res) => {
+  const fileId = req.params.id;
+
+  try {
+    const result = await db.query('SELECT * FROM files WHERE id = $1', [fileId]);
+    if (result.rows.length === 0) return res.status(404).json({ success: false });
+
+    await db.query('DELETE FROM files WHERE id = $1', [fileId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
 });
 
 // 健康检查
@@ -167,17 +167,11 @@ app.get('/healthz', (req, res) => {
   res.json({ ok: true });
 });
 
-// 让 React 处理所有未匹配的请求
-// app.get('*', (req, res) => {
-//   res.sendFile(path.join(__dirname, 'client/dist/index.html'));
-// });
-// 更明确地只匹配非 API 路由
+// React 前端
 app.get(/^\/(?!api\/).*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'client/dist/index.html'));
 });
 
-
-// 启动服务
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
 });
