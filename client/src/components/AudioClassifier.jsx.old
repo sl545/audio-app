@@ -1,0 +1,382 @@
+import React, { useEffect, useState, useRef } from 'react';
+import Meyda from 'meyda';
+
+/**
+ * 音频分类器组件
+ * 基于 MFCC 特征进行简单的音频分类（音乐 vs 语音）
+ */
+function AudioClassifier({ audioRef }) {
+  const [classification, setClassification] = useState(null);
+  const [confidence, setConfidence] = useState(0);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [features, setFeatures] = useState(null);
+  
+  const meydaAnalyzerRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const sourceRef = useRef(null);
+  const samplesRef = useRef([]);
+
+  useEffect(() => {
+    if (!audioRef) return;
+
+    const handlePlay = () => {
+      try {
+        setIsAnalyzing(true);
+        samplesRef.current = [];
+
+        // 初始化 AudioContext
+        if (!audioContextRef.current) {
+          audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        if (!sourceRef.current) {
+          sourceRef.current = audioContextRef.current.createMediaElementSource(audioRef);
+        }
+
+        const context = audioContextRef.current;
+        const source = sourceRef.current;
+        const analyzer = context.createAnalyser();
+        
+        analyzer.fftSize = 2048;
+        source.connect(analyzer);
+        analyzer.connect(context.destination);
+
+        if (context.state === 'suspended') {
+          context.resume();
+        }
+
+        // 创建 Meyda 分析器
+        meydaAnalyzerRef.current = Meyda.createMeydaAnalyzer({
+          audioContext: context,
+          source: source,
+          bufferSize: 512,
+          featureExtractors: [
+            'mfcc',
+            'spectralCentroid',
+            'spectralFlatness',
+            'zcr',
+            'rms',
+          ],
+          callback: (extractedFeatures) => {
+            // 收集样本
+            samplesRef.current.push(extractedFeatures);
+            
+            // 每收集 20 个样本进行一次分类
+            if (samplesRef.current.length >= 20) {
+              classifyAudio(samplesRef.current);
+              samplesRef.current = samplesRef.current.slice(-10); // 保留最近 10 个
+            }
+
+            setFeatures(extractedFeatures);
+          },
+        });
+
+        meydaAnalyzerRef.current.start();
+        console.log('✅ 分类器启动');
+
+      } catch (err) {
+        console.error('❌ 分类器启动失败:', err);
+        setIsAnalyzing(false);
+      }
+    };
+
+    const handleStop = () => {
+      setIsAnalyzing(false);
+      if (meydaAnalyzerRef.current) {
+        meydaAnalyzerRef.current.stop();
+      }
+    };
+
+    audioRef.addEventListener('play', handlePlay);
+    audioRef.addEventListener('pause', handleStop);
+    audioRef.addEventListener('ended', handleStop);
+
+    return () => {
+      audioRef.removeEventListener('play', handlePlay);
+      audioRef.removeEventListener('pause', handleStop);
+      audioRef.removeEventListener('ended', handleStop);
+      
+      if (meydaAnalyzerRef.current) {
+        meydaAnalyzerRef.current.stop();
+      }
+    };
+  }, [audioRef]);
+
+  /**
+   * 简单的音频分类算法
+   * 基于 MFCC 和其他音频特征的统计特性
+   */
+  const classifyAudio = (samples) => {
+    if (samples.length === 0) return;
+
+    // 计算特征的平均值
+    const avgSpectralCentroid = samples.reduce((sum, s) => sum + (s.spectralCentroid || 0), 0) / samples.length;
+    const avgSpectralFlatness = samples.reduce((sum, s) => sum + (s.spectralFlatness || 0), 0) / samples.length;
+    const avgZCR = samples.reduce((sum, s) => sum + (s.zcr || 0), 0) / samples.length;
+    const avgRMS = samples.reduce((sum, s) => sum + (s.rms || 0), 0) / samples.length;
+
+    // 计算 MFCC 的方差（音乐通常方差较大）
+    const mfccVariances = [];
+    if (samples[0].mfcc) {
+      for (let i = 0; i < samples[0].mfcc.length; i++) {
+        const values = samples.map(s => s.mfcc[i]);
+        const mean = values.reduce((a, b) => a + b, 0) / values.length;
+        const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+        mfccVariances.push(variance);
+      }
+    }
+
+    const avgMFCCVariance = mfccVariances.reduce((a, b) => a + b, 0) / mfccVariances.length;
+
+    // 分类规则（基于经验值）
+    let musicScore = 0;
+    let speechScore = 0;
+
+    // 规则 1: 频谱质心
+    // 音乐通常频谱质心较高（更多高频成分）
+    if (avgSpectralCentroid > 2000) {
+      musicScore += 2;
+    } else {
+      speechScore += 2;
+    }
+
+    // 规则 2: 频谱平坦度
+    // 语音通常频谱更平坦（接近白噪声）
+    if (avgSpectralFlatness > 0.3) {
+      speechScore += 2;
+    } else {
+      musicScore += 2;
+    }
+
+    // 规则 3: 过零率
+    // 语音通常过零率较高
+    if (avgZCR > 0.1) {
+      speechScore += 1;
+    } else {
+      musicScore += 1;
+    }
+
+    // 规则 4: MFCC 方差
+    // 音乐的 MFCC 方差通常更大（更多变化）
+    if (avgMFCCVariance > 10) {
+      musicScore += 2;
+    } else {
+      speechScore += 2;
+    }
+
+    // 规则 5: RMS（音量）
+    // 音乐通常音量更稳定
+    if (avgRMS > 0.02 && avgRMS < 0.1) {
+      musicScore += 1;
+    }
+
+    // 计算最终分类
+    const totalScore = musicScore + speechScore;
+    const musicConfidence = (musicScore / totalScore) * 100;
+    const speechConfidence = (speechScore / totalScore) * 100;
+
+    if (musicScore > speechScore) {
+      setClassification('音乐 (Music)');
+      setConfidence(musicConfidence);
+    } else {
+      setClassification('语音 (Speech)');
+      setConfidence(speechConfidence);
+    }
+
+    console.log('🎯 分类结果:', {
+      classification: musicScore > speechScore ? '音乐' : '语音',
+      musicScore,
+      speechScore,
+      confidence: Math.max(musicConfidence, speechConfidence),
+      features: {
+        avgSpectralCentroid,
+        avgSpectralFlatness,
+        avgZCR,
+        avgMFCCVariance,
+      },
+    });
+  };
+
+  if (!isAnalyzing && !classification) return null;
+
+  return (
+    <div style={styles.container}>
+      <div style={styles.header}>
+        <h3 style={styles.title}>🎯 音频分类器 (Audio Classifier)</h3>
+        {isAnalyzing && <span style={styles.badge}>分析中...</span>}
+      </div>
+
+      {classification && (
+        <div style={styles.result}>
+          <div style={styles.classLabel}>
+            分类结果: <strong>{classification}</strong>
+          </div>
+          <div style={styles.confidenceBar}>
+            <div style={styles.confidenceLabel}>
+              置信度: {confidence.toFixed(1)}%
+            </div>
+            <div style={styles.progressBar}>
+              <div 
+                style={{
+                  ...styles.progress,
+                  width: `${confidence}%`,
+                  background: confidence > 70 ? '#28a745' : confidence > 50 ? '#ffc107' : '#dc3545',
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {features && (
+        <div style={styles.features}>
+          <h4 style={styles.subtitle}>特征值:</h4>
+          <div style={styles.featureGrid}>
+            <div style={styles.featureItem}>
+              <span style={styles.featureName}>频谱质心:</span>
+              <span style={styles.featureValue}>
+                {features.spectralCentroid?.toFixed(2) || 'N/A'} Hz
+              </span>
+            </div>
+            <div style={styles.featureItem}>
+              <span style={styles.featureName}>频谱平坦度:</span>
+              <span style={styles.featureValue}>
+                {features.spectralFlatness?.toFixed(4) || 'N/A'}
+              </span>
+            </div>
+            <div style={styles.featureItem}>
+              <span style={styles.featureName}>过零率:</span>
+              <span style={styles.featureValue}>
+                {features.zcr?.toFixed(4) || 'N/A'}
+              </span>
+            </div>
+            <div style={styles.featureItem}>
+              <span style={styles.featureName}>RMS 音量:</span>
+              <span style={styles.featureValue}>
+                {features.rms?.toFixed(4) || 'N/A'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={styles.info}>
+        <p style={styles.infoText}>
+          💡 <strong>分类说明:</strong>
+          <br/>
+          本分类器基于 MFCC 和音频特征进行简单的二分类（音乐 vs 语音）。
+          <br/>
+          判断依据：频谱质心、频谱平坦度、过零率、MFCC 方差等。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const styles = {
+  container: {
+    padding: '1.5rem',
+    background: 'white',
+    borderRadius: '12px',
+    border: '2px solid #667eea',
+    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '1.5rem',
+  },
+  title: {
+    margin: 0,
+    color: '#333',
+    fontSize: '1.25rem',
+  },
+  badge: {
+    background: '#667eea',
+    color: 'white',
+    padding: '0.375rem 0.875rem',
+    borderRadius: '12px',
+    fontSize: '0.85rem',
+    fontWeight: '600',
+  },
+  result: {
+    background: '#f8f9fa',
+    padding: '1.5rem',
+    borderRadius: '8px',
+    marginBottom: '1.5rem',
+  },
+  classLabel: {
+    fontSize: '1.25rem',
+    marginBottom: '1rem',
+    color: '#333',
+  },
+  confidenceBar: {
+    marginTop: '1rem',
+  },
+  confidenceLabel: {
+    fontSize: '0.95rem',
+    color: '#666',
+    marginBottom: '0.5rem',
+  },
+  progressBar: {
+    width: '100%',
+    height: '24px',
+    background: '#e9ecef',
+    borderRadius: '12px',
+    overflow: 'hidden',
+  },
+  progress: {
+    height: '100%',
+    transition: 'width 0.3s ease',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: '0.85rem',
+  },
+  features: {
+    marginBottom: '1.5rem',
+  },
+  subtitle: {
+    margin: '0 0 1rem 0',
+    color: '#555',
+    fontSize: '1rem',
+  },
+  featureGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '0.75rem',
+  },
+  featureItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '0.75rem',
+    background: '#f8f9fa',
+    borderRadius: '6px',
+  },
+  featureName: {
+    color: '#666',
+    fontSize: '0.9rem',
+  },
+  featureValue: {
+    fontWeight: 'bold',
+    color: '#007bff',
+    fontSize: '0.9rem',
+  },
+  info: {
+    background: '#e7f3ff',
+    padding: '1rem',
+    borderRadius: '8px',
+    border: '1px solid #b3d9ff',
+  },
+  infoText: {
+    margin: 0,
+    fontSize: '0.9rem',
+    color: '#004085',
+    lineHeight: '1.6',
+  },
+};
+
+export default AudioClassifier;

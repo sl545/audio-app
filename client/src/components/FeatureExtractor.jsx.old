@@ -5,47 +5,95 @@ function FeatureExtractor({ audioRef }) {
   const [features, setFeatures] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisHistory, setAnalysisHistory] = useState([]);
+  const [error, setError] = useState(null);
+  
   const meydaAnalyzerRef = useRef(null);
   const canvasRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const sourceRef = useRef(null);
 
   useEffect(() => {
-    if (!audioRef) return;
+    if (!audioRef) {
+      console.log('⚠️ FeatureExtractor: audioRef 为空');
+      return;
+    }
 
-    const context = new (window.AudioContext || window.webkitAudioContext)();
-    const source = context.createMediaElementSource(audioRef);
-    const analyzer = context.createAnalyser();
-    analyzer.fftSize = 2048;
+    console.log('🎵 FeatureExtractor: 初始化');
 
-    source.connect(analyzer);
-    analyzer.connect(context.destination);
+    let analyzer;
+
+    const initAudioContext = () => {
+      try {
+        // 创建 AudioContext（只创建一次）
+        if (!audioContextRef.current) {
+          audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+          console.log('✅ AudioContext 创建成功');
+        }
+
+        const context = audioContextRef.current;
+
+        // 创建 MediaElementSource（只创建一次）
+        if (!sourceRef.current) {
+          sourceRef.current = context.createMediaElementSource(audioRef);
+          console.log('✅ MediaElementSource 创建成功');
+        }
+
+        const source = sourceRef.current;
+
+        // 创建 Analyzer
+        analyzer = context.createAnalyser();
+        analyzer.fftSize = 2048;
+
+        // 连接：source → analyzer → destination
+        source.connect(analyzer);
+        analyzer.connect(context.destination);
+
+        console.log('✅ 音频节点连接成功');
+      } catch (err) {
+        console.error('❌ AudioContext 初始化失败:', err);
+        setError(err.message);
+      }
+    };
 
     // 音频播放时开始分析
-    audioRef.onplay = () => {
+    const handlePlay = () => {
       try {
+        console.log('▶️ 开始音频分析');
         setIsAnalyzing(true);
-        
+        setError(null);
+
+        if (!audioContextRef.current || !sourceRef.current) {
+          initAudioContext();
+        }
+
+        // 恢复 AudioContext（如果被暂停）
+        if (audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume();
+        }
+
+        // 创建 Meyda 分析器
         meydaAnalyzerRef.current = Meyda.createMeydaAnalyzer({
-          audioContext: context,
-          source: source,
+          audioContext: audioContextRef.current,
+          source: sourceRef.current,
           bufferSize: 512,
           featureExtractors: [
-            'mfcc',           // Mel-frequency cepstral coefficients
-            'zcr',            // Zero Crossing Rate
-            'spectralCentroid', // Spectral Centroid
-            'spectralFlatness', // Spectral Flatness
-            'rms',            // Root Mean Square (音量)
-            'energy',         // Energy
+            'mfcc',
+            'zcr',
+            'spectralCentroid',
+            'spectralFlatness',
+            'rms',
+            'energy',
           ],
           callback: extractedFeatures => {
             setFeatures(extractedFeatures);
-            
-            // 保存历史记录（最多保存 100 条）
+
+            // 保存历史记录（最多 100 条）
             setAnalysisHistory(prev => {
               const newHistory = [...prev, {
                 timestamp: Date.now(),
                 features: extractedFeatures,
               }];
-              return newHistory.slice(-100); // 只保留最近 100 条
+              return newHistory.slice(-100);
             });
 
             // 绘制 MFCC 可视化
@@ -56,26 +104,42 @@ function FeatureExtractor({ audioRef }) {
         });
 
         meydaAnalyzerRef.current.start();
-      } catch (e) {
-        console.error('Meyda 启动错误:', e);
+        console.log('✅ Meyda 分析器启动成功');
+
+      } catch (err) {
+        console.error('❌ Meyda 启动错误:', err);
+        setError(err.message);
         setIsAnalyzing(false);
       }
     };
 
     // 音频暂停/结束时停止分析
-    const stopAnalysis = () => {
+    const handleStop = () => {
+      console.log('⏸ 停止音频分析');
       if (meydaAnalyzerRef.current) {
         meydaAnalyzerRef.current.stop();
         setIsAnalyzing(false);
       }
     };
 
-    audioRef.onpause = stopAnalysis;
-    audioRef.onended = stopAnalysis;
+    // 绑定事件
+    audioRef.addEventListener('play', handlePlay);
+    audioRef.addEventListener('pause', handleStop);
+    audioRef.addEventListener('ended', handleStop);
 
+    // 清理函数
     return () => {
-      stopAnalysis();
-      context.close();
+      console.log('🧹 FeatureExtractor: 清理');
+      
+      audioRef.removeEventListener('play', handlePlay);
+      audioRef.removeEventListener('pause', handleStop);
+      audioRef.removeEventListener('ended', handleStop);
+
+      if (meydaAnalyzerRef.current) {
+        meydaAnalyzerRef.current.stop();
+      }
+
+      // 注意：不要关闭 AudioContext，因为它会被复用
     };
   }, [audioRef]);
 
@@ -120,7 +184,7 @@ function FeatureExtractor({ audioRef }) {
     ctx.stroke();
   };
 
-  // 计算平均特征（从历史记录）
+  // 计算平均特征
   const getAverageFeatures = () => {
     if (analysisHistory.length === 0) return null;
 
@@ -137,6 +201,16 @@ function FeatureExtractor({ audioRef }) {
 
   const averages = getAverageFeatures();
 
+  // 如果有错误，显示错误信息
+  if (error) {
+    return (
+      <div style={{ padding: '1rem', background: '#f8d7da', color: '#721c24', borderRadius: '8px' }}>
+        <strong>分析器错误:</strong> {error}
+      </div>
+    );
+  }
+
+  // 如果没有音频或未开始分析，不显示
   if (!features && !isAnalyzing) return null;
 
   return (
@@ -206,7 +280,7 @@ function FeatureExtractor({ audioRef }) {
         </div>
       )}
 
-      {/* MFCC 详细数据（可折叠） */}
+      {/* MFCC 详细数据 */}
       {features?.mfcc && (
         <details className="mfcc-details">
           <summary>🔍 查看完整 MFCC 数据 ({features.mfcc.length} 个系数)</summary>

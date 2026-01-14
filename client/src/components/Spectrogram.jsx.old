@@ -1,0 +1,229 @@
+import React, { useEffect, useRef, useState } from 'react';
+
+/**
+ * 频谱图组件
+ * 实时显示音频的时频特性
+ */
+function Spectrogram({ audioRef }) {
+  const canvasRef = useRef(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const analyzerRef = useRef(null);
+  const contextRef = useRef(null);
+  const sourceRef = useRef(null);
+  const animationRef = useRef(null);
+
+  useEffect(() => {
+    if (!audioRef) return;
+
+    const handlePlay = () => {
+      try {
+        // 初始化 AudioContext
+        if (!contextRef.current) {
+          contextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        if (!sourceRef.current) {
+          sourceRef.current = contextRef.current.createMediaElementSource(audioRef);
+        }
+
+        const context = contextRef.current;
+        const source = sourceRef.current;
+        const analyzer = context.createAnalyser();
+        
+        analyzer.fftSize = 2048;
+        analyzer.smoothingTimeConstant = 0.8;
+        
+        source.connect(analyzer);
+        analyzer.connect(context.destination);
+        
+        analyzerRef.current = analyzer;
+
+        if (context.state === 'suspended') {
+          context.resume();
+        }
+
+        setIsAnalyzing(true);
+        drawSpectrogram();
+        console.log('✅ Spectrogram 启动');
+
+      } catch (err) {
+        console.error('❌ Spectrogram 启动失败:', err);
+      }
+    };
+
+    const drawSpectrogram = () => {
+      const canvas = canvasRef.current;
+      if (!canvas || !analyzerRef.current) return;
+
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      
+      const bufferLength = analyzerRef.current.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      analyzerRef.current.getByteFrequencyData(dataArray);
+
+      // 向左移动已有图像
+      const imageData = ctx.getImageData(1, 0, width - 1, height);
+      ctx.putImageData(imageData, 0, 0);
+
+      // 在右侧绘制新的频谱列
+      for (let i = 0; i < height; i++) {
+        // 从低频到高频（底部到顶部）
+        const freqIndex = Math.floor((i / height) * bufferLength);
+        const value = dataArray[freqIndex];
+        
+        // 颜色映射：蓝（低）→ 绿 → 黄 → 红（高）
+        const hue = 240 - (value / 255) * 240;
+        const saturation = 100;
+        const lightness = (value / 255) * 50;
+        
+        ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        ctx.fillRect(width - 1, height - i - 1, 1, 1);
+      }
+
+      if (isAnalyzing) {
+        animationRef.current = requestAnimationFrame(drawSpectrogram);
+      }
+    };
+
+    const handleStop = () => {
+      setIsAnalyzing(false);
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+
+    audioRef.addEventListener('play', handlePlay);
+    audioRef.addEventListener('pause', handleStop);
+    audioRef.addEventListener('ended', handleStop);
+
+    return () => {
+      audioRef.removeEventListener('play', handlePlay);
+      audioRef.removeEventListener('pause', handleStop);
+      audioRef.removeEventListener('ended', handleStop);
+      
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [audioRef, isAnalyzing]);
+
+  return (
+    <div style={styles.container}>
+      <div style={styles.header}>
+        <h4 style={styles.title}>📊 Spectrogram（频谱图）</h4>
+        {isAnalyzing && <span style={styles.badge}>实时分析中...</span>}
+      </div>
+      
+      <canvas
+        ref={canvasRef}
+        width={800}
+        height={300}
+        style={styles.canvas}
+      />
+      
+      <div style={styles.labels}>
+        <div style={styles.xAxis}>
+          <span>← 过去</span>
+          <span>时间</span>
+          <span>现在 →</span>
+        </div>
+        <div style={styles.yAxis}>
+          <span>↑ 高频</span>
+          <span>频率</span>
+          <span>↓ 低频</span>
+        </div>
+      </div>
+
+      <div style={styles.legend}>
+        <span style={styles.legendTitle}>强度:</span>
+        <div style={styles.colorBar}>
+          <span style={{...styles.legendLabel, left: '0%'}}>低</span>
+          <span style={{...styles.legendLabel, right: '0%'}}>高</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const styles = {
+  container: {
+    padding: '1.5rem',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #ddd',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '1rem',
+  },
+  title: {
+    margin: 0,
+    color: '#333',
+    fontSize: '1.1rem',
+  },
+  badge: {
+    background: '#28a745',
+    color: 'white',
+    padding: '0.25rem 0.75rem',
+    borderRadius: '12px',
+    fontSize: '0.85rem',
+  },
+  canvas: {
+    width: '100%',
+    maxWidth: '800px',
+    height: 'auto',
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+    background: '#000',
+  },
+  labels: {
+    marginTop: '0.5rem',
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '0.85rem',
+    color: '#666',
+  },
+  xAxis: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    width: '60%',
+  },
+  yAxis: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: '0.25rem',
+  },
+  legend: {
+    marginTop: '1rem',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+  },
+  legendTitle: {
+    fontSize: '0.9rem',
+    color: '#666',
+    fontWeight: '600',
+  },
+  colorBar: {
+    flex: 1,
+    height: '20px',
+    background: 'linear-gradient(to right, hsl(240, 100%, 25%), hsl(180, 100%, 50%), hsl(60, 100%, 50%), hsl(0, 100%, 50%))',
+    borderRadius: '4px',
+    position: 'relative',
+  },
+  legendLabel: {
+    position: 'absolute',
+    top: '100%',
+    fontSize: '0.8rem',
+    color: '#666',
+    marginTop: '0.25rem',
+  },
+};
+
+export default Spectrogram;

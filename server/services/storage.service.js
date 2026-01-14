@@ -3,141 +3,164 @@
 
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const crypto = require('crypto');
-const path = require('path');
 
 // 配置 R2 客户端（兼容 S3 API）
 const r2Client = new S3Client({
   region: 'auto',
-  endpoint: process.env.R2_ENDPOINT,
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
   credentials: {
     accessKeyId: process.env.R2_ACCESS_KEY_ID,
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
   },
 });
 
-const BUCKET_NAME = process.env.R2_BUCKET_NAME;
-
 class StorageService {
   /**
    * 上传文件到 R2
-   * @param {Buffer} fileBuffer - 文件内容
-   * @param {string} originalName - 原始文件名
-   * @param {string} mimeType - MIME 类型
-   * @returns {Promise<{key: string, url: string}>}
+   * @param {Buffer} buffer - 文件的二进制数据
+   * @param {string} filename - 文件名
+   * @returns {Promise<string>} 文件的公开访问 URL
    */
-  static async uploadFile(fileBuffer, originalName, mimeType) {
+  static async uploadToR2(buffer, filename) {
     try {
-      // 生成唯一文件名
-      const fileExt = path.extname(originalName);
-      const uniqueId = crypto.randomBytes(16).toString('hex');
-      const timestamp = Date.now();
-      const key = `audio/${timestamp}-${uniqueId}${fileExt}`;
-
+      console.log('📦 StorageService: 开始上传到 R2');
+      console.log('📦 文件名:', filename);
+      console.log('📦 文件大小:', buffer.length, 'bytes');
+      
       const command = new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: key,
-        Body: fileBuffer,
-        ContentType: mimeType,
-        Metadata: {
-          originalName: originalName,
-          uploadedAt: new Date().toISOString(),
-        },
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: filename,
+        Body: buffer,
+        ContentType: this.getContentType(filename),
       });
-
+      
       await r2Client.send(command);
-
-      // 生成访问 URL
-      const url = process.env.R2_PUBLIC_URL 
-        ? `${process.env.R2_PUBLIC_URL}/${key}`
-        : await this.getSignedUrl(key, 3600 * 24 * 7); // 7天有效
-
-      console.log(`✅ 文件上传成功: ${key}`);
-      return { key, url };
+      
+      // 生成公开访问 URL
+      const url = process.env.R2_PUBLIC_URL
+        ? `${process.env.R2_PUBLIC_URL}/${filename}`
+        : `https://${process.env.R2_BUCKET_NAME}.${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${filename}`;
+      
+      console.log('✅ R2 上传成功:', url);
+      
+      return url;
+      
     } catch (error) {
       console.error('❌ R2 上传失败:', error);
-      throw new Error('文件上传失败: ' + error.message);
+      throw new Error(`R2 上传失败: ${error.message}`);
     }
   }
 
   /**
-   * 生成临时访问 URL（签名 URL）
-   * @param {string} key - 文件 key
-   * @param {number} expiresIn - 过期时间（秒）
-   * @returns {Promise<string>}
+   * 从 R2 下载文件
+   * @param {string} url - 文件的 URL
+   * @returns {Promise<Buffer>} 文件的二进制数据
    */
-  static async getSignedUrl(key, expiresIn = 3600) {
+  static async downloadFromR2(url) {
     try {
+      // 从 URL 提取文件名
+      const filename = url.split('/').pop();
+      
+      console.log('📥 从 R2 下载文件:', filename);
+      
       const command = new GetObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: key,
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: filename,
       });
-
-      const url = await getSignedUrl(r2Client, command, { expiresIn });
-      return url;
+      
+      const response = await r2Client.send(command);
+      
+      // 将 stream 转换为 buffer
+      const chunks = [];
+      for await (const chunk of response.Body) {
+        chunks.push(chunk);
+      }
+      const buffer = Buffer.concat(chunks);
+      
+      console.log('✅ R2 下载成功, 大小:', buffer.length, 'bytes');
+      
+      return buffer;
+      
     } catch (error) {
-      console.error('❌ 生成签名 URL 失败:', error);
-      throw new Error('生成访问链接失败');
+      console.error('❌ R2 下载失败:', error);
+      throw new Error(`R2 下载失败: ${error.message}`);
     }
   }
 
   /**
-   * 删除文件
-   * @param {string} key - 文件 key
+   * 从 R2 删除文件
+   * @param {string} url - 文件的 URL
+   * @returns {Promise<void>}
    */
-  static async deleteFile(key) {
+  static async deleteFromR2(url) {
     try {
+      // 从 URL 提取文件名
+      const filename = url.split('/').pop();
+      
+      console.log('🗑️ 从 R2 删除文件:', filename);
+      
       const command = new DeleteObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: key,
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: filename,
       });
-
+      
       await r2Client.send(command);
-      console.log(`✅ 文件删除成功: ${key}`);
+      
+      console.log('✅ R2 文件已删除');
+      
     } catch (error) {
       console.error('❌ R2 删除失败:', error);
-      throw new Error('文件删除失败');
+      throw new Error(`R2 删除失败: ${error.message}`);
     }
   }
 
   /**
-   * 获取文件流（用于流式播放）
-   * @param {string} key - 文件 key
+   * 生成预签名 URL（用于临时访问私有文件）
+   * @param {string} filename - 文件名
+   * @param {number} expiresIn - 过期时间（秒），默认 3600（1小时）
+   * @returns {Promise<string>} 预签名 URL
    */
-  static async getFileStream(key) {
+  static async getSignedUrl(filename, expiresIn = 3600) {
     try {
       const command = new GetObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: key,
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: filename,
       });
-
-      const response = await r2Client.send(command);
-      return response.Body;
+      
+      const signedUrl = await getSignedUrl(r2Client, command, { expiresIn });
+      
+      return signedUrl;
+      
     } catch (error) {
-      console.error('❌ 获取文件流失败:', error);
-      throw new Error('文件读取失败');
+      console.error('❌ 生成预签名 URL 失败:', error);
+      throw new Error(`生成预签名 URL 失败: ${error.message}`);
     }
   }
 
   /**
-   * 检查文件是否存在
-   * @param {string} key - 文件 key
-   * @returns {Promise<boolean>}
+   * 根据文件扩展名获取 Content-Type
+   * @param {string} filename - 文件名
+   * @returns {string} Content-Type
    */
-  static async fileExists(key) {
-    try {
-      const command = new GetObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: key,
-      });
-      await r2Client.send(command);
-      return true;
-    } catch (error) {
-      if (error.name === 'NoSuchKey') {
-        return false;
-      }
-      throw error;
-    }
+  static getContentType(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const contentTypes = {
+      'webm': 'audio/webm',
+      'mp3': 'audio/mpeg',
+      'wav': 'audio/wav',
+      'ogg': 'audio/ogg',
+      'm4a': 'audio/mp4',
+      'mp4': 'video/mp4',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'pdf': 'application/pdf',
+      'txt': 'text/plain',
+      'json': 'application/json',
+    };
+    
+    return contentTypes[ext] || 'application/octet-stream';
   }
 }
 

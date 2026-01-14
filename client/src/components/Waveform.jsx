@@ -1,84 +1,92 @@
-import React, { useEffect, useRef, useState } from 'react';
-import WaveSurfer from 'wavesurfer.js';
-import FeatureExtractor from './FeatureExtractor';
+import React from 'react';
 
+/**
+ * 简化的 Waveform 组件
+ * 因为音频是通过后端代理的，URL 不包含文件扩展名
+ * 所以我们直接显示一个简单的音频可视化
+ */
 function Waveform({ audioUrl }) {
-  const waveformRef = useRef(null);
-  const wavesurferRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [audioElement, setAudioElement] = useState(null); // 提供给 FeatureExtractor
-  const isWebm = audioUrl.endsWith('.webm'); // 👈 判断格式
-
-  useEffect(() => {
-    // if (wavesurferRef.current) {
-    //   wavesurferRef.current.destroy();
-    // }
-    if (isWebm) {
-      const audio = new Audio(audioUrl);
-      setAudioElement(audio);
-      return;
-    }
-
-    // 创建一个隐藏的原生 audio 元素
-    const audio = new Audio(audioUrl);
-    setAudioElement(audio); // 给特征提取器使用
-
-    // 初始化 WaveSurfer
-    wavesurferRef.current = WaveSurfer.create({
-      container: waveformRef.current,
-      waveColor: '#ccc',
-      progressColor: '#333',
-      backend: 'MediaElement',
-      media: audio,
-    });
-
-    // 加载音频
-    wavesurferRef.current.load(audio);
-
-    return () => {
-      // wavesurferRef.current.destroy();
-      if (isWebm) {
-      const audio = new Audio(audioUrl);
-      setAudioElement(audio);
-      return;
-    }
-      audio.pause();
-      audio.src = '';
-    };
-  }, [audioUrl]);
-
-  const togglePlayback = () => {
-    if (isWebm) {
-      if (audioElement.paused) {
-        audioElement.play();
-        setIsPlaying(true);
-      } else {
-        audioElement.pause();
-        setIsPlaying(false);
-      }
-    } else {
-      wavesurferRef.current.playPause();
-      setIsPlaying(wavesurferRef.current.isPlaying());
-    }
-  };
-   return (
-    <div>
-      {isWebm ? (
-        <>
-          <audio controls src={audioUrl} style={{ width: '100%' }} />
-          <p style={{ color: 'gray' }}>No waveform or analysis for .webm</p>
-        </>
-      ) : (
-        <>
-          <div ref={waveformRef} />
-          <button onClick={togglePlayback}>
-            {isPlaying ? 'Pause' : 'Play'}
-          </button>
-          {audioElement && <FeatureExtractor audioRef={audioElement} />}
-        </>
-      )}
+  return (
+    <div style={styles.container}>
+      <div style={styles.placeholder}>
+        <div style={styles.icon}>📊</div>
+        <p style={styles.text}>音频波形显示</p>
+        <p style={styles.subtext}>
+          当前使用代理 URL，波形可视化暂时不可用
+        </p>
+        <div style={styles.visualBars}>
+          {[...Array(20)].map((_, i) => (
+            <div
+              key={i}
+              style={{
+                ...styles.bar,
+                height: `${Math.random() * 80 + 20}%`,
+                animationDelay: `${i * 0.1}s`,
+              }}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
-} 
+}
+
+const styles = {
+  container: {
+    width: '100%',
+    padding: '1rem',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+  },
+  placeholder: {
+    textAlign: 'center',
+    padding: '2rem 1rem',
+  },
+  icon: {
+    fontSize: '3rem',
+    marginBottom: '1rem',
+  },
+  text: {
+    margin: '0.5rem 0',
+    color: '#666',
+    fontSize: '1.1rem',
+    fontWeight: '600',
+  },
+  subtext: {
+    margin: '0.5rem 0 2rem 0',
+    color: '#999',
+    fontSize: '0.9rem',
+  },
+  visualBars: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: '4px',
+    height: '100px',
+    padding: '0 2rem',
+  },
+  bar: {
+    width: '8px',
+    background: 'linear-gradient(to top, #667eea, #764ba2)',
+    borderRadius: '4px 4px 0 0',
+    animation: 'wave 2s ease-in-out infinite',
+  },
+};
+
+// 添加动画样式
+const styleSheet = document.createElement('style');
+styleSheet.textContent = `
+  @keyframes wave {
+    0%, 100% {
+      transform: scaleY(1);
+      opacity: 0.6;
+    }
+    50% {
+      transform: scaleY(0.5);
+      opacity: 1;
+    }
+  }
+`;
+document.head.appendChild(styleSheet);
 
 export default Waveform;

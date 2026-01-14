@@ -1,16 +1,12 @@
 // client/src/services/fileService.js
-// 前端文件上传和管理服务
+// 文件上传和管理服务
 
 const API_BASE = '/api/files';
 
 class FileService {
   /**
-   * 上传文件到 R2（新方法 - 用于 Recorder 组件）
-   * @param {Blob} blob - 音频 Blob
-   * @param {Object} options - 上传选项
-   * @param {string} options.filename - 文件名
-   * @param {Object} options.metadata - 元数据
-   * @returns {Promise<Object>} 上传结果
+   * ⭐ 上传文件到 R2（用于 Recorder 组件）
+   * 这是新方法，必须有！
    */
   static async uploadFile(blob, options = {}) {
     const { filename, metadata = {} } = options;
@@ -18,17 +14,20 @@ class FileService {
     const formData = new FormData();
     formData.append('audio', blob, filename || `audio-${Date.now()}.webm`);
 
-    // 添加元数据（如果有）
     if (Object.keys(metadata).length > 0) {
       formData.append('metadata', JSON.stringify(metadata));
     }
+
+    console.log('📤 准备上传文件:', filename);
 
     try {
       const response = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
         body: formData,
-        credentials: 'include', // 包含 session cookie
+        credentials: 'include', // 重要：包含 session cookie
       });
+
+      console.log('📤 上传响应状态:', response.status);
 
       if (!response.ok) {
         const error = await response.json();
@@ -36,18 +35,17 @@ class FileService {
       }
 
       const result = await response.json();
+      console.log('✅ 上传成功:', result);
       return result;
+
     } catch (error) {
-      console.error('上传错误:', error);
+      console.error('❌ 上传错误:', error);
       throw error;
     }
   }
 
   /**
-   * 上传音频文件（原有方法 - 带进度）
-   * @param {File|Blob} audioFile - 音频文件
-   * @param {Function} onProgress - 进度回调
-   * @returns {Promise<Object>}
+   * 上传音频文件（带进度）
    */
   static async uploadAudio(audioFile, onProgress) {
     const formData = new FormData();
@@ -56,7 +54,6 @@ class FileService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
-      // 监听上传进度
       if (onProgress) {
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable) {
@@ -88,13 +85,13 @@ class FileService {
       xhr.addEventListener('abort', () => reject(new Error('上传已取消')));
 
       xhr.open('POST', `${API_BASE}/upload`);
+      xhr.withCredentials = true;
       xhr.send(formData);
     });
   }
 
   /**
    * 获取文件列表
-   * @param {Object} params - 查询参数
    */
   static async getFiles(params = {}) {
     const queryString = new URLSearchParams(params).toString();
@@ -178,25 +175,19 @@ class FileService {
   }
 
   /**
-   * 获取文件下载 URL
-   * @param {number|string} fileId - 文件 ID
-   * @returns {string} 下载 URL
+   * 获取下载 URL
    */
   static getDownloadUrl(fileId) {
     return `${API_BASE}/${fileId}/download`;
   }
 
   /**
-   * 获取文件播放 URL（带认证）
-   * @param {string} url - R2 URL 或文件 ID
-   * @returns {string} 播放 URL
+   * 获取播放 URL
    */
   static getPlayUrl(url) {
-    // 如果已经是完整 URL（R2），直接返回
     if (url && url.startsWith('http')) {
       return url;
     }
-    // 否则使用下载端点
     return this.getDownloadUrl(url);
   }
 
