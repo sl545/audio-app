@@ -16,13 +16,13 @@ function FileUploader({ onUploadSuccess }) {
     // 验证文件类型
     const validTypes = ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/ogg', 'audio/m4a'];
     if (!validTypes.includes(file.type) && !file.name.match(/\.(webm|wav|mp3|ogg|m4a)$/i)) {
-      setError('请选择有效的音频文件（webm, wav, mp3, ogg, m4a）');
+      setError('Please choose valid audio file（webm, wav, mp3, ogg, m4a）');
       return;
     }
 
     // 验证文件大小（最大 50MB）
     if (file.size > 50 * 1024 * 1024) {
-      setError('文件大小不能超过 50MB');
+      setError('File size must not exceed 50MB');
       return;
     }
 
@@ -30,7 +30,7 @@ function FileUploader({ onUploadSuccess }) {
     setError(null);
 
     try {
-      console.log('📤 开始上传文件:', file.name, '大小:', file.size, 'bytes');
+      console.log('📤 Start uploading:', file.name, 'Size:', file.size, 'bytes');
 
       // 创建 FormData
       const formData = new FormData();
@@ -46,7 +46,7 @@ function FileUploader({ onUploadSuccess }) {
       const data = await response.json();
 
       if (data.success) {
-        console.log('✅ 上传成功:', data);
+        console.log('✅ Upload successful:', data);
         setError(null);
         
         // 清空 input
@@ -57,13 +57,13 @@ function FileUploader({ onUploadSuccess }) {
           onUploadSuccess();
         }
 
-        alert('上传成功！');
+        alert('Upload successful！');
       } else {
-        throw new Error(data.message || '上传失败');
+        throw new Error(data.message || 'Upload failed');
       }
 
     } catch (err) {
-      console.error('❌ 上传失败:', err);
+      console.error('❌ Upload failed:', err);
       setError(err.message);
     } finally {
       setUploading(false);
@@ -74,23 +74,23 @@ function FileUploader({ onUploadSuccess }) {
     <div style={styles.container}>
       <div style={styles.uploadBox}>
         <div style={styles.icon}>📁</div>
-        <h4 style={styles.title}>手动上传音频文件</h4>
+        <h4 style={styles.title}>Manual Upload Audio File</h4>
         <p style={styles.description}>
-          支持格式：WebM, WAV, MP3, OGG, M4A
+          Supported formats: WebM, WAV, MP3, OGG, M4A
           <br/>
-          最大大小：50MB
+          Maximum size: 50MB
         </p>
 
         <label htmlFor="file-upload" style={styles.uploadButton}>
           {uploading ? (
             <>
               <span style={styles.spinner}>⏳</span>
-              上传中...
+              Uploading...
             </>
           ) : (
             <>
               <span style={styles.uploadIcon}>⬆️</span>
-              选择文件上传
+              Choose file to upload
             </>
           )}
         </label>

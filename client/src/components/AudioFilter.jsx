@@ -57,16 +57,16 @@ function AudioFilter({ audioRef }) {
       filterRef.current = filter;
       analyzerRef.current = analyzer;
       isInitializedRef.current = true;
-      
-      console.log('✅ 音频滤波器初始化成功');
-      
+
+      console.log('✅ Audio filter initialization successful');
+
       // 开始可视化
       if (isEnabled) {
         startVisualization();
       }
       
     } catch (err) {
-      console.error('❌ 滤波器初始化失败:', err);
+      console.error('❌ Audio filter initialization failed:', err);
     }
   };
 
@@ -78,8 +78,8 @@ function AudioFilter({ audioRef }) {
     filterRef.current.frequency.value = frequency;
     filterRef.current.Q.value = q;
     filterRef.current.gain.value = gain;
-    
-    console.log('🎛️ 滤波器参数更新:', { filterType, frequency, q, gain });
+
+    console.log('🎛️ Filter parameters updated:', { filterType, frequency, q, gain });
   }, [filterType, frequency, q, gain]);
 
   // 启用/禁用滤波器
@@ -189,22 +189,22 @@ function AudioFilter({ audioRef }) {
 
   // 滤波器类型配置
   const filterTypes = [
-    { value: 'lowpass', label: '🔉 低通滤波器', description: '保留低频，去除高频（让声音更柔和）' },
-    { value: 'highpass', label: '🔊 高通滤波器', description: '保留高频，去除低频（去除隆隆声）' },
-    { value: 'bandpass', label: '📻 带通滤波器', description: '只保留特定频率范围（电话效果）' },
-    { value: 'notch', label: '🚫 陷波滤波器', description: '去除特定频率（消除嗡嗡声）' },
-    { value: 'peaking', label: '📈 峰值滤波器', description: '增强或削弱特定频率' },
-    { value: 'lowshelf', label: '📉 低频架型', description: '提升或削弱所有低频' },
-    { value: 'highshelf', label: '📊 高频架型', description: '提升或削弱所有高频' },
+    { value: 'lowpass', label: '🔉  Lowpass filter', description: 'keep low frequencies, remove high frequencies, make sound softer' },
+    { value: 'highpass', label: '🔊 Highpass filter', description: 'keep high frequencies, remove low frequencies, eliminate rumble' },
+    { value: 'bandpass', label: '📻 Bandpass filter', description: 'keep only a specific frequency range, create a telephone effect' },
+    { value: 'notch', label: '🚫 Notch filter', description: 'remove a specific frequency, eliminate hum' },
+    { value: 'peaking', label: '📈 Peaking filter', description: 'boost or cut a specific frequency' },
+    { value: 'lowshelf', label: '📉 Lowshelf filter', description: 'boost or cut all low frequencies' },
+    { value: 'highshelf', label: '📊 Highshelf filter', description: 'boost or cut all high frequencies' },
   ];
 
   // 预设配置
   const presets = {
-    'voice-enhance': { type: 'highpass', freq: 80, q: 0.7, label: '🎤 人声增强' },
-    'bass-boost': { type: 'lowshelf', freq: 200, q: 1, gain: 10, label: '🔊 低音增强' },
-    'treble-boost': { type: 'highshelf', freq: 4000, q: 1, gain: 10, label: '✨ 高音增强' },
-    'telephone': { type: 'bandpass', freq: 1000, q: 2, label: '📞 电话效果' },
-    'remove-hum': { type: 'notch', freq: 60, q: 10, label: '🔇 去除嗡嗡声' },
+    'voice-enhance': { type: 'highpass', freq: 80, q: 0.7, label: '🎤 Voice Enhance' },
+    'bass-boost': { type: 'lowshelf', freq: 200, q: 1, gain: 10, label: '🔊 Bass Boost' },
+    'treble-boost': { type: 'highshelf', freq: 4000, q: 1, gain: 10, label: '✨ Treble Boost' },
+    'telephone': { type: 'bandpass', freq: 1000, q: 2, label: '📞 Telephone Effect' },
+    'remove-hum': { type: 'notch', freq: 60, q: 10, label: '🔇 Remove Hum' },
   };
 
   const applyPreset = (preset) => {
@@ -229,8 +229,8 @@ function AudioFilter({ audioRef }) {
   if (!audioRef) {
     return (
       <div style={styles.card}>
-        <h3 style={styles.cardTitle}>🎛️ 音频滤波器</h3>
-        <p style={styles.placeholder}>请先选择一个音频文件</p>
+        <h3 style={styles.cardTitle}>🎛️ Audio Filter</h3>
+        <p style={styles.placeholder}>Please choose an audio file</p>
       </div>
     );
   }
@@ -238,7 +238,7 @@ function AudioFilter({ audioRef }) {
   return (
     <div style={styles.card}>
       <div style={styles.header}>
-        <h3 style={styles.cardTitle}>🎛️ 音频滤波器</h3>
+        <h3 style={styles.cardTitle}>🎛️ Audio Filter</h3>
         <label style={styles.toggle}>
           <input
             type="checkbox"
@@ -247,14 +247,14 @@ function AudioFilter({ audioRef }) {
             style={styles.checkbox}
           />
           <span style={styles.toggleLabel}>
-            {isEnabled ? '✅ 已启用' : '⭕ 已禁用'}
+            {isEnabled ? '✅ Enabled' : '⭕ Disabled'}
           </span>
         </label>
       </div>
 
       {/* 预设按钮 */}
       <div style={styles.presets}>
-        <div style={styles.presetLabel}>快速预设：</div>
+        <div style={styles.presetLabel}>Speed Presets</div>
         {Object.entries(presets).map(([key, preset]) => (
           <button
             key={key}
@@ -269,7 +269,7 @@ function AudioFilter({ audioRef }) {
 
       {/* 滤波器类型选择 */}
       <div style={styles.control}>
-        <label style={styles.label}>滤波器类型</label>
+        <label style={styles.label}>Filter Type</label>
         <select
           value={filterType}
           onChange={(e) => setFilterType(e.target.value)}
@@ -290,7 +290,7 @@ function AudioFilter({ audioRef }) {
       {/* 频率控制 */}
       <div style={styles.control}>
         <label style={styles.label}>
-          截止频率: <strong>{frequency} Hz</strong>
+          Cutoff frequency: <strong>{frequency} Hz</strong>
         </label>
         <input
           type="range"
@@ -307,7 +307,7 @@ function AudioFilter({ audioRef }) {
       {/* Q 值控制（品质因数）*/}
       <div style={styles.control}>
         <label style={styles.label}>
-          Q 值（锐度）: <strong>{q.toFixed(1)}</strong>
+          Q-Value (Sharpness): <strong>{q.toFixed(1)}</strong>
         </label>
         <input
           type="range"
@@ -319,14 +319,14 @@ function AudioFilter({ audioRef }) {
           style={styles.slider}
           disabled={!isEnabled}
         />
-        <div style={styles.range}>0.1 (平缓) ←→ 20 (锐利)</div>
+        <div style={styles.range}>0.1 (flat) ←→ 20 (sharp)</div>
       </div>
 
       {/* 增益控制（仅部分滤波器需要）*/}
       {(filterType === 'peaking' || filterType === 'lowshelf' || filterType === 'highshelf') && (
         <div style={styles.control}>
           <label style={styles.label}>
-            增益: <strong>{gain > 0 ? '+' : ''}{gain} dB</strong>
+            Gain: <strong>{gain > 0 ? '+' : ''}{gain} dB</strong>
           </label>
           <input
             type="range"
@@ -343,7 +343,7 @@ function AudioFilter({ audioRef }) {
 
       {/* 频率响应可视化 */}
       <div style={styles.visualContainer}>
-        <div style={styles.visualLabel}>频率响应（实时）</div>
+        <div style={styles.visualLabel}>frequency response (real-time)</div>
         <canvas
           ref={canvasRef}
           width={600}
@@ -352,20 +352,20 @@ function AudioFilter({ audioRef }) {
         />
         {!isEnabled && (
           <div style={styles.overlay}>
-            启用滤波器以查看频率响应
+            Enable the filter to view the frequency response
           </div>
         )}
       </div>
 
       {/* 说明 */}
       <div style={styles.info}>
-        <strong>💡 使用提示：</strong>
+        <strong>💡 Usage prompt</strong>
         <ul style={styles.tipsList}>
-          <li><strong>低通滤波器：</strong>去除高频噪音，让声音更温暖柔和</li>
-          <li><strong>高通滤波器：</strong>去除低频隆隆声，让人声更清晰</li>
-          <li><strong>带通滤波器：</strong>只保留中间频率，模拟电话/收音机效果</li>
-          <li><strong>陷波滤波器：</strong>精确去除特定频率的干扰（如 50/60Hz 电源噪音）</li>
-          <li><strong>Q 值：</strong>数值越大，滤波器越锐利（影响范围越窄）</li>
+          <li><strong>Low-pass filter</strong>:remove high-frequency noise for a warmer sound</li>
+          <li><strong>High-pass filter</strong>:remove low-frequency rumble for clearer vocals</li>
+          <li><strong>Band-pass filter</strong>:simulate phone/radio effect by keeping mid frequencies</li>
+          <li><strong>Notch filter</strong>:remove specific frequency interference (e.g., 50/60Hz power noise)</li>
+          <li><strong>Q value</strong>:higher values mean a sharper filter (narrower range)</li>
         </ul>
       </div>
     </div>

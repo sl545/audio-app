@@ -10,9 +10,9 @@ function Waveform({ audioUrl }) {
     <div style={styles.container}>
       <div style={styles.placeholder}>
         <div style={styles.icon}>📊</div>
-        <p style={styles.text}>音频波形显示</p>
+        <p style={styles.text}>Audio Waveform Display</p>
         <p style={styles.subtext}>
-          当前使用代理 URL，波形可视化暂时不可用
+          USING PROXY URL - Waveform visualization is unavailable
         </p>
         <div style={styles.visualBars}>
           {[...Array(20)].map((_, i) => (

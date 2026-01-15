@@ -4,7 +4,6 @@ import Waveform from './components/Waveform';
 import AudioAnalysis from './components/AudioAnalysis';
 import FileUploader from './components/FileUploader';
 import AudioFilter from './components/AudioFilter';
-
 function App() {
   const [user, setUser] = useState(null);
   const [files, setFiles] = useState([]);
@@ -14,7 +13,6 @@ function App() {
   const [mode, setMode] = useState('login');
   
   const audioRef = useRef(null);
-
   const fetchMe = async () => {
     const res = await fetch('/api/me', { credentials: 'include' });
     const data = await res.json();
@@ -25,7 +23,6 @@ function App() {
       setUser(null);
     }
   };
-
   const fetchFiles = () => {
     fetch('/api/files', { credentials: 'include' })
       .then(res => {
@@ -33,7 +30,7 @@ function App() {
         return res.json();
       })
       .then(data => {
-        console.log('📁 文件列表原始响应:', data);
+        console.log('📁 File List Raw Response:', data);
         
         // 处理两种可能的响应格式
         let fileList;
@@ -46,22 +43,20 @@ function App() {
         } else {
           throw new Error('Invalid response format');
         }
-        
-        console.log('📁 处理后的文件列表:', fileList);
+
+        console.log('📁 File list after processing:', fileList);
         setFiles(fileList);
         setError(null);
       })
       .catch(err => {
         console.error('Error fetching files:', err);
-        setError('无法加载文件列表');
+        setError('Unable to load file list');
         setFiles([]);
       });
   };
-
   useEffect(() => {
     fetchMe();
   }, []);
-
   const handleAuth = async () => {
     const url = `/api/${mode}`;
     const res = await fetch(url, {
@@ -77,7 +72,6 @@ function App() {
       alert(data.message || 'Auth failed');
     }
   };
-
   const handleLogout = async () => {
     try {
       await fetch('/api/logout', { 
@@ -90,19 +84,18 @@ function App() {
       setFiles([]);
       setSelectedFile(null);
       setError(null);
-      
-      console.log('✅ 已退出登录');
+
+      console.log('✅ Logout successfully');
     } catch (err) {
-      console.error('❌ 退出失败:', err);
+      console.error('❌ Logout failed:', err);
       // 即使失败也清除状态
       setUser(null);
       setFiles([]);
       setSelectedFile(null);
     }
   };
-
   const handleDelete = async (fileId) => {
-    if (!confirm('确定要删除这个文件吗？')) return;
+    if (!confirm('Are you sure you want to delete this file?')) return;
     
     try {
       const res = await fetch(`/api/files/${fileId}`, {
@@ -111,20 +104,19 @@ function App() {
       });
       
       if (res.ok) {
-        alert('删除成功！');
+        alert('Deleted successfully');
         if (selectedFile && selectedFile.id === fileId) {
           setSelectedFile(null);
         }
         fetchFiles();
       } else {
-        alert('删除失败');
+        alert('Delete failed');
       }
     } catch (err) {
-      console.error('删除错误:', err);
-      alert('删除失败');
+      console.error('Delete error:', err);
+      alert('Delete failed');
     }
   };
-
   // ⭐ 新增：下载文件函数
   const handleDownload = async (fileId, filename) => {
     try {
@@ -146,18 +138,16 @@ function App() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err) {
-      console.error('下载错误:', err);
-      alert('下载失败');
+      console.error('Download error:', err);
+      alert('Download failed');
     }
   };
-
   const formatSize = (bytes) => {
     if (!bytes) return 'N/A';
     const kb = bytes / 1024;
     if (kb < 1024) return `${kb.toFixed(1)} KB`;
     return `${(kb / 1024).toFixed(1)} MB`;
   };
-
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
@@ -168,15 +158,14 @@ function App() {
       minute: '2-digit',
     });
   };
-
   if (!user) {
     return (
       <div style={styles.authContainer}>
         <div style={styles.authForm}>
-          <h2 style={styles.authTitle}>{mode === 'login' ? '🎵 登录' : '🎵 注册'}</h2>
+          <h2 style={styles.authTitle}>{mode === 'login' ? '🎵 Login' : '🎵 Register'}</h2>
           <input
             type="text"
-            placeholder="用户名"
+            placeholder="Username"
             value={form.username}
             onChange={e => setForm({ ...form, username: e.target.value })}
             style={styles.input}
@@ -184,67 +173,64 @@ function App() {
           />
           <input
             type="password"
-            placeholder="密码"
+            placeholder="Password"
             value={form.password}
             onChange={e => setForm({ ...form, password: e.target.value })}
             style={styles.input}
             onKeyPress={e => e.key === 'Enter' && handleAuth()}
           />
           <button onClick={handleAuth} style={styles.primaryButton}>
-            {mode === 'login' ? '登录' : '注册'}
+            {mode === 'login' ? 'Login' : 'Register'}
           </button>
           <p style={styles.switchMode}>
-            {mode === 'login' ? '没有账号？' : '已有账号？'}{' '}
-            <span 
+            {mode === 'login' ? 'No account?' : 'Already have an account?'}{' '}
+            <span
               onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
               style={styles.linkButton}
             >
-              {mode === 'login' ? '点击注册' : '点击登录'}
+              {mode === 'login' ? 'Register' : 'Login'}
             </span>
           </p>
         </div>
       </div>
     );
   }
-
   return (
     <div style={styles.container}>
       {/* Header */}
       <div style={styles.header}>
-        <h1 style={styles.mainTitle}>🎵 音频管理系统</h1>
+        <h1 style={styles.mainTitle}>🎵 Audio Management System</h1>
         <div style={styles.userInfo}>
-          <span style={styles.username}>欢迎, {user.username}</span>
-          {user.role === 'admin' && <span style={styles.adminBadge}>管理员</span>}
-          <button onClick={handleLogout} style={styles.logoutButton}>退出</button>
+          <span style={styles.username}>Welcome, {user.username}</span>
+          {user.role === 'admin' && <span style={styles.adminBadge}>Admin</span>}
+          <button onClick={handleLogout} style={styles.logoutButton}>Logout</button>
         </div>
       </div>
-
       {/* Main Content - Two Column Layout */}
       <div style={styles.mainContent}>
         {/* Left Column - Recorder and File List */}
         <div style={styles.leftColumn}>
           {/* Recorder Section */}
           <div style={styles.card}>
-            <h2 style={styles.cardTitle}>🎤 录音与上传</h2>
+            <h2 style={styles.cardTitle}>🎤 Recording and Upload</h2>
             
             {/* 录音功能 */}
             <Recorder onUploadSuccess={fetchFiles} />
             
             {/* 分隔线 */}
-            <div style={styles.divider}>或</div>
+            <div style={styles.divider}>OR</div>
             
             {/* 文件上传 */}
             <FileUploader onUploadSuccess={fetchFiles} />
           </div>
-
           {/* File List Section */}
           <div style={styles.card}>
-            <h2 style={styles.cardTitle}>📁 文件列表 ({files.length})</h2>
+            <h2 style={styles.cardTitle}>📁 List of Files ({files.length})</h2>
             
             {error && <p style={styles.error}>{error}</p>}
             
             {files.length === 0 ? (
-              <p style={styles.emptyMessage}>还没有上传任何文件</p>
+              <p style={styles.emptyMessage}>No files uploaded yet</p>
             ) : (
               <div style={styles.fileList}>
                 {files.map(file => (
@@ -255,7 +241,7 @@ function App() {
                       ...(selectedFile && selectedFile.id === file.id ? styles.fileItemSelected : {})
                     }}
                     onClick={() => {
-                      console.log('🎵 选择文件:', file);
+                      console.log('🎵 Choose files:', file);
                       setSelectedFile(file);
                     }}
                   >
@@ -272,7 +258,7 @@ function App() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          console.log('▶️ 播放文件:', file);
+                          console.log('▶️ Display file:', file);
                           setSelectedFile(file);
                         }}
                         style={styles.iconButton}
@@ -309,7 +295,6 @@ function App() {
             )}
           </div>
         </div>
-
         {/* Right Column - Player and Analysis */}
         <div style={styles.rightColumn}>
           {selectedFile ? (
@@ -335,20 +320,18 @@ function App() {
                 />
                 
                 <div style={styles.fileInfo}>
-                  <div><strong>文件大小:</strong> {formatSize(selectedFile.size)}</div>
-                  <div><strong>上传时间:</strong> {formatDate(selectedFile.upload_time || selectedFile.created_at)}</div>
+                  <div><strong>File size :</strong> {formatSize(selectedFile.size)}</div>
+                  <div><strong>Upload time:</strong> {formatDate(selectedFile.upload_time || selectedFile.created_at)}</div>
                   {selectedFile.username && (
-                    <div><strong>上传者:</strong> {selectedFile.username}</div>
+                    <div><strong>Uploader:</strong> {selectedFile.username}</div>
                   )}
                 </div>
               </div>
-
               {/* Waveform Section */}
               <div style={styles.card}>
-                <h3 style={styles.cardTitle}>📊 波形</h3>
+                <h3 style={styles.cardTitle}>📊 Waveform</h3>
                 <Waveform audioUrl={selectedFile.url} />
               </div>
-
               <AudioFilter audioRef={audioRef.current} />
               {/* Unified Audio Analysis */}
               <AudioAnalysis audioRef={audioRef.current} />
@@ -358,8 +341,8 @@ function App() {
             <div style={styles.card}>
               <div style={styles.placeholder}>
                 <div style={styles.placeholderIcon}>🎵</div>
-                <h3>选择一个文件开始播放</h3>
-                <p>点击左侧文件列表中的任意文件</p>
+                <h3>Choose a file to play</h3>
+                <p>Click any file in the file list on the left.</p>
               </div>
             </div>
           )}
@@ -368,7 +351,6 @@ function App() {
     </div>
   );
 }
-
 const styles = {
   // Auth Styles
   authContainer: {
@@ -425,7 +407,6 @@ const styles = {
     textAlign: 'center',
     color: '#666',
   },
-
   // Main Layout
   container: {
     minHeight: '100vh',
@@ -475,7 +456,6 @@ const styles = {
     fontWeight: '500',
     transition: 'background 0.3s',
   },
-
   // Two Column Layout
   mainContent: {
     display: 'grid',
@@ -494,7 +474,6 @@ const styles = {
     gap: '2rem',
     minHeight: '600px',
   },
-
   // Card Styles
   card: {
     background: 'white',
@@ -508,7 +487,6 @@ const styles = {
     color: '#333',
     fontWeight: '600',
   },
-
   // File List
   fileList: {
     display: 'flex',
@@ -573,7 +551,6 @@ const styles = {
     fontSize: '1rem',
     transition: 'background 0.2s',
   },
-
   // Player
   audioPlayer: {
     width: '100%',
@@ -589,7 +566,6 @@ const styles = {
     background: '#f8f9fa',
     borderRadius: '8px',
   },
-
   // Placeholder
   placeholder: {
     textAlign: 'center',
@@ -600,7 +576,6 @@ const styles = {
     fontSize: '4rem',
     marginBottom: '1rem',
   },
-
   // Messages
   error: {
     color: '#dc3545',
@@ -623,5 +598,4 @@ const styles = {
     fontWeight: '600',
   },
 };
-
 export default App;

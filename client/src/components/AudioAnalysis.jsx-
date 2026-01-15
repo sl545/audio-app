@@ -2,18 +2,18 @@ import React, { useEffect, useState, useRef } from 'react';
 import Meyda from 'meyda';
 
 /**
- * Unified Audio Analysis Component
- * Includes: MFCC, Spectrogram, Classifier
- * Shares the same AudioContext and source
+ * 统一的音频分析组件
+ * 包含：MFCC、Spectrogram、Classifier
+ * 共享同一个 AudioContext 和 source
  */
 function AudioAnalysis({ audioRef }) {
-  // Audio context (create only once)
+  // 音频上下文（只创建一次）
   const audioContextRef = useRef(null);
   const sourceRef = useRef(null);
   const analyzerRef = useRef(null);
   const meydaAnalyzerRef = useRef(null);
   
-  // State
+  // 状态
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [mfccFeatures, setMfccFeatures] = useState(null);
   const [classification, setClassification] = useState(null);
@@ -24,13 +24,13 @@ function AudioAnalysis({ audioRef }) {
   const mfccCanvasRef = useRef(null);
   const spectrogramCanvasRef = useRef(null);
   
-  // Animation and data
+  // 动画和数据
   const animationRef = useRef(null);
   const samplesRef = useRef([]);
 
-  // Initialize audio context (call only once)
+  // 初始化音频上下文（只调用一次）
   const initAudioContext = () => {
-    if (audioContextRef.current) return; // Already initialized
+    if (audioContextRef.current) return; // 已经初始化
 
     try {
       const context = new (window.AudioContext || window.webkitAudioContext)();
@@ -40,7 +40,7 @@ function AudioAnalysis({ audioRef }) {
       analyzer.fftSize = 2048;
       analyzer.smoothingTimeConstant = 0.8;
       
-      // Connect: source → analyzer → destination
+      // 连接：source → analyzer → destination
       source.connect(analyzer);
       analyzer.connect(context.destination);
       
@@ -48,17 +48,17 @@ function AudioAnalysis({ audioRef }) {
       sourceRef.current = source;
       analyzerRef.current = analyzer;
 
-      console.log('✅ Audio context initialized successfully');
+      console.log('✅ AudioContextRef initialized successfully');
     } catch (err) {
-      console.error('❌ Audio context initialization failed:', err);
+      console.error('❌ AudioContextRef initialization failed:', err);
       setError(err.message);
     }
   };
 
-  // Start analysis
+  // 启动分析
   const startAnalysis = () => {
     try {
-      // Initialize context if not yet initialized
+      // 初始化上下文（如果还没有）
       if (!audioContextRef.current) {
         initAudioContext();
       }
@@ -66,12 +66,12 @@ function AudioAnalysis({ audioRef }) {
       const context = audioContextRef.current;
       const source = sourceRef.current;
 
-      // Resume AudioContext if suspended
+      // 恢复 AudioContext（如果被暂停）
       if (context.state === 'suspended') {
         context.resume();
       }
 
-      // Start Meyda analyzer (MFCC + Classifier)
+      // 启动 Meyda 分析器（MFCC + Classifier）
       meydaAnalyzerRef.current = Meyda.createMeydaAnalyzer({
         audioContext: context,
         source: source,
@@ -87,14 +87,14 @@ function AudioAnalysis({ audioRef }) {
         callback: (features) => {
           setMfccFeatures(features);
           
-          // Collect samples for classification
+          // 收集样本用于分类
           samplesRef.current.push(features);
           if (samplesRef.current.length >= 20) {
             classifyAudio(samplesRef.current);
             samplesRef.current = samplesRef.current.slice(-10);
           }
 
-          // Draw MFCC
+          // 绘制 MFCC
           if (features.mfcc && mfccCanvasRef.current) {
             drawMFCC(features.mfcc);
           }
@@ -103,21 +103,21 @@ function AudioAnalysis({ audioRef }) {
 
       meydaAnalyzerRef.current.start();
       
-      // Start Spectrogram drawing
+      // 启动 Spectrogram 绘制
       drawSpectrogram();
       
       setIsAnalyzing(true);
       setError(null);
-      console.log('✅ Analyzer started successfully');
+      console.log('✅ MeydaAnalyzer started successfully');
 
     } catch (err) {
-      console.error('❌ Analyzer startup failed:', err);
+      console.error('❌ MeydaAnalyzer startup failed:', err);
       setError(err.message);
       setIsAnalyzing(false);
     }
   };
 
-  // Stop analysis
+  // 停止分析
   const stopAnalysis = () => {
     if (meydaAnalyzerRef.current) {
       meydaAnalyzerRef.current.stop();
@@ -129,7 +129,7 @@ function AudioAnalysis({ audioRef }) {
     samplesRef.current = [];
   };
 
-  // Draw MFCC
+  // 绘制 MFCC
   const drawMFCC = (mfccValues) => {
     const canvas = mfccCanvasRef.current;
     if (!canvas) return;
@@ -164,7 +164,7 @@ function AudioAnalysis({ audioRef }) {
     ctx.stroke();
   };
 
-  // Draw Spectrogram
+  // 绘制 Spectrogram
   const drawSpectrogram = () => {
     const canvas = spectrogramCanvasRef.current;
     if (!canvas || !analyzerRef.current) return;
@@ -178,47 +178,47 @@ function AudioAnalysis({ audioRef }) {
     
     analyzerRef.current.getByteFrequencyData(dataArray);
 
-    // Shift left
+    // 向左移动
     const imageData = ctx.getImageData(1, 0, width - 1, height);
     ctx.putImageData(imageData, 0, 0);
 
-    // Draw new column (heavily enhanced version)
+    // 绘制新列（极度增强版本）
     for (let i = 0; i < height; i++) {
       const freqIndex = Math.floor((i / height) * bufferLength);
       const rawValue = dataArray[freqIndex];
       
-      // Enhanced: 3x amplification + 50 base brightness
+      // 🔥 超强增强：放大 3 倍 + 基础亮度 50
       const enhanced = Math.min(255, rawValue * 3.0 + 50);
       const intensity = enhanced / 255;
       
-      // Use more vivid colors
+      // 使用更鲜艳的颜色
       let r, g, b;
       
       if (intensity < 0.2) {
-        // Dark blue to blue
+        // 深蓝到蓝
         r = 0;
         g = 0;
         b = Math.floor(100 + intensity * 5 * 155);
       } else if (intensity < 0.4) {
-        // Blue to cyan
+        // 蓝到青
         const t = (intensity - 0.2) * 5;
         r = 0;
         g = Math.floor(t * 255);
         b = 255;
       } else if (intensity < 0.6) {
-        // Cyan to green
+        // 青到绿
         const t = (intensity - 0.4) * 5;
         r = 0;
         g = 255;
         b = Math.floor((1 - t) * 255);
       } else if (intensity < 0.8) {
-        // Green to yellow
+        // 绿到黄
         const t = (intensity - 0.6) * 5;
         r = Math.floor(t * 255);
         g = 255;
         b = 0;
       } else {
-        // Yellow to red
+        // 黄到红
         const t = (intensity - 0.8) * 5;
         r = 255;
         g = Math.floor((1 - t) * 255);
@@ -234,7 +234,7 @@ function AudioAnalysis({ audioRef }) {
     }
   };
 
-  // Audio classification
+  // 音频分类
   const classifyAudio = (samples) => {
     if (samples.length === 0) return;
 
@@ -262,7 +262,7 @@ function AudioAnalysis({ audioRef }) {
     }
   };
 
-  // Event listeners
+  // 事件监听
   useEffect(() => {
     if (!audioRef) return;
 
@@ -300,7 +300,7 @@ function AudioAnalysis({ audioRef }) {
         {classification && (
           <div style={styles.classifierResult}>
             <div style={styles.classLabel}>
-              Classification Result: <strong>{classification}</strong>
+              Classification Result: <strong> {classification}</strong>
             </div>
             <div style={styles.confidenceBar}>
               <div style={styles.confidenceLabel}>Confidence: {confidence.toFixed(1)}%</div>
@@ -328,14 +328,14 @@ function AudioAnalysis({ audioRef }) {
           style={styles.canvas}
         />
         <div style={styles.labels}>
-          <span>← Past | Time | Present →</span>
-          <span>↑ High Freq | Frequency | Low Freq ↓</span>
+          <span>← past | time | now →</span>
+          <span>↑ high | frequency | ↓ low</span>
         </div>
       </div>
 
       {/* MFCC Section */}
       <div style={styles.section}>
-        <h4 style={styles.subtitle}>🎵 MFCC Coefficients Visualization</h4>
+        <h4 style={styles.subtitle}>🎵 MFCC Visualization</h4>
         <canvas
           ref={mfccCanvasRef}
           width={600}
@@ -354,7 +354,7 @@ function AudioAnalysis({ audioRef }) {
               <div style={styles.featureValue}>{mfccFeatures.rms?.toFixed(4) || 'N/A'}</div>
             </div>
             <div style={styles.featureCard}>
-              <div style={styles.featureName}>Zero Crossing Rate</div>
+              <div style={styles.featureName}>Zero Crossing Rate (ZCR)</div>
               <div style={styles.featureValue}>{mfccFeatures.zcr?.toFixed(4) || 'N/A'}</div>
             </div>
             <div style={styles.featureCard}>
@@ -452,7 +452,7 @@ const styles = {
     height: 'auto',
     border: '1px solid #ddd',
     borderRadius: '4px',
-    background: 'rgb(10, 10, 30)',
+    background: 'rgb(10, 10, 30)', // 深蓝色背景
   },
   labels: {
     marginTop: '0.5rem',
