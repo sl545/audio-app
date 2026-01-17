@@ -1,15 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
 import Meyda from 'meyda';
+import { useAudioContext } from './AudioContextProvider';
 
 /**
- * Unified Audio Analysis Component
- * Includes: MFCC, Spectrogram, Classifier
- * Shares the same AudioContext and source
+ * Audio Analysis Component (Shared Context Version)
+ * Uses shared AudioContext to prevent conflicts
  */
 function AudioAnalysis({ audioRef }) {
-  // Audio context (create only once)
-  const audioContextRef = useRef(null);
-  const sourceRef = useRef(null);
+  const { audioContext, sourceNode, isInitialized } = useAudioContext();
+  
   const analyzerRef = useRef(null);
   const meydaAnalyzerRef = useRef(null);
   
@@ -27,54 +26,64 @@ function AudioAnalysis({ audioRef }) {
   // Animation and data
   const animationRef = useRef(null);
   const samplesRef = useRef([]);
+  const destinationRef = useRef(null);
 
-  // Initialize audio context (call only once)
-  const initAudioContext = () => {
-    if (audioContextRef.current) return; // Already initialized
+  // Create analyzer node
+  const createAnalyzer = () => {
+    if (!audioContext || !sourceNode || analyzerRef.current) return;
 
     try {
-      const context = new (window.AudioContext || window.webkitAudioContext)();
-      const source = context.createMediaElementSource(audioRef);
-      const analyzer = context.createAnalyser();
-      
+      console.log('📊 Creating analyzer for AudioAnalysis...');
+
+      const analyzer = audioContext.createAnalyser();
       analyzer.fftSize = 2048;
       analyzer.smoothingTimeConstant = 0.8;
-      
-      // Connect: source → analyzer → destination
-      source.connect(analyzer);
-      analyzer.connect(context.destination);
-      
-      audioContextRef.current = context;
-      sourceRef.current = source;
-      analyzerRef.current = analyzer;
 
-      console.log('✅ Audio context initialized successfully');
+      // Create destination to prevent disconnection
+      const destination = audioContext.createGain();
+      destination.gain.value = 1;
+
+      // Connect: sourceNode → analyzer → destination
+      sourceNode.connect(analyzer);
+      analyzer.connect(destination);
+      destination.connect(audioContext.destination);
+
+      analyzerRef.current = analyzer;
+      destinationRef.current = destination;
+
+      console.log('✅ AudioAnalysis analyzer created');
+
     } catch (err) {
-      console.error('❌ Audio context initialization failed:', err);
+      console.error('❌ Failed to create analyzer:', err);
       setError(err.message);
     }
   };
 
   // Start analysis
   const startAnalysis = () => {
+    if (!audioContext || !sourceNode) {
+      console.log('⏳ Waiting for shared context...');
+      return;
+    }
+
+    if (!analyzerRef.current) {
+      createAnalyzer();
+    }
+
+    if (!analyzerRef.current) return;
+
     try {
-      // Initialize context if not yet initialized
-      if (!audioContextRef.current) {
-        initAudioContext();
-      }
-
-      const context = audioContextRef.current;
-      const source = sourceRef.current;
-
       // Resume AudioContext if suspended
-      if (context.state === 'suspended') {
-        context.resume();
+      if (audioContext.state === 'suspended') {
+        audioContext.resume().then(() => {
+          console.log('▶️ AudioContext resumed');
+        });
       }
 
-      // Start Meyda analyzer (MFCC + Classifier)
+      // Start Meyda analyzer
       meydaAnalyzerRef.current = Meyda.createMeydaAnalyzer({
-        audioContext: context,
-        source: source,
+        audioContext: audioContext,
+        source: sourceNode,
         bufferSize: 512,
         featureExtractors: [
           'mfcc',
@@ -103,15 +112,15 @@ function AudioAnalysis({ audioRef }) {
 
       meydaAnalyzerRef.current.start();
       
-      // Start Spectrogram drawing
+      // Start Spectrogram
       drawSpectrogram();
       
       setIsAnalyzing(true);
       setError(null);
-      console.log('✅ Analyzer started successfully');
+      console.log('✅ AudioAnalysis started');
 
     } catch (err) {
-      console.error('❌ Analyzer startup failed:', err);
+      console.error('❌ Analysis startup failed:', err);
       setError(err.message);
       setIsAnalyzing(false);
     }
@@ -182,43 +191,36 @@ function AudioAnalysis({ audioRef }) {
     const imageData = ctx.getImageData(1, 0, width - 1, height);
     ctx.putImageData(imageData, 0, 0);
 
-    // Draw new column (heavily enhanced version)
+    // Draw new column
     for (let i = 0; i < height; i++) {
       const freqIndex = Math.floor((i / height) * bufferLength);
       const rawValue = dataArray[freqIndex];
       
-      // Enhanced: 3x amplification + 50 base brightness
       const enhanced = Math.min(255, rawValue * 3.0 + 50);
       const intensity = enhanced / 255;
       
-      // Use more vivid colors
       let r, g, b;
       
       if (intensity < 0.2) {
-        // Dark blue to blue
         r = 0;
         g = 0;
         b = Math.floor(100 + intensity * 5 * 155);
       } else if (intensity < 0.4) {
-        // Blue to cyan
         const t = (intensity - 0.2) * 5;
         r = 0;
         g = Math.floor(t * 255);
         b = 255;
       } else if (intensity < 0.6) {
-        // Cyan to green
         const t = (intensity - 0.4) * 5;
         r = 0;
         g = 255;
         b = Math.floor((1 - t) * 255);
       } else if (intensity < 0.8) {
-        // Green to yellow
         const t = (intensity - 0.6) * 5;
         r = Math.floor(t * 255);
         g = 255;
         b = 0;
       } else {
-        // Yellow to red
         const t = (intensity - 0.8) * 5;
         r = 255;
         g = Math.floor((1 - t) * 255);
@@ -262,21 +264,43 @@ function AudioAnalysis({ audioRef }) {
     }
   };
 
+  // Wait for shared context to be ready
+  useEffect(() => {
+    if (isInitialized && audioContext && sourceNode) {
+      createAnalyzer();
+    }
+  }, [isInitialized, audioContext, sourceNode]);
+
   // Event listeners
   useEffect(() => {
     if (!audioRef) return;
 
-    audioRef.addEventListener('play', startAnalysis);
-    audioRef.addEventListener('pause', stopAnalysis);
-    audioRef.addEventListener('ended', stopAnalysis);
+    const handlePlay = () => {
+      console.log('▶️ Audio playing (AudioAnalysis)');
+      startAnalysis();
+    };
 
-    return () => {
-      audioRef.removeEventListener('play', startAnalysis);
-      audioRef.removeEventListener('pause', stopAnalysis);
-      audioRef.removeEventListener('ended', stopAnalysis);
+    const handlePause = () => {
+      console.log('⏸️ Audio paused (AudioAnalysis)');
       stopAnalysis();
     };
-  }, [audioRef]);
+
+    const handleEnded = () => {
+      console.log('⏹️ Audio ended (AudioAnalysis)');
+      stopAnalysis();
+    };
+
+    audioRef.addEventListener('play', handlePlay);
+    audioRef.addEventListener('pause', handlePause);
+    audioRef.addEventListener('ended', handleEnded);
+
+    return () => {
+      audioRef.removeEventListener('play', handlePlay);
+      audioRef.removeEventListener('pause', handlePause);
+      audioRef.removeEventListener('ended', handleEnded);
+      stopAnalysis();
+    };
+  }, [audioRef, isInitialized]);
 
   if (error) {
     return (
@@ -416,7 +440,6 @@ const styles = {
     borderRadius: '12px',
     fontSize: '0.85rem',
     fontWeight: '600',
-    animation: 'pulse 2s infinite',
   },
   classifierResult: {
     background: '#f8f9fa',

@@ -2,8 +2,10 @@ import React, { useEffect, useState, useRef } from 'react';
 import Recorder from './components/Recorder';
 import Waveform from './components/Waveform';
 import AudioAnalysis from './components/AudioAnalysis';
-import FileUploader from './components/FileUploader';
 import AudioFilter from './components/AudioFilter';
+import FileUploader from './components/FileUploader';
+import { AudioContextProvider } from './components/AudioContextProvider';
+
 function App() {
   const [user, setUser] = useState(null);
   const [files, setFiles] = useState([]);
@@ -13,16 +15,18 @@ function App() {
   const [mode, setMode] = useState('login');
   
   const audioRef = useRef(null);
+
   const fetchMe = async () => {
     const res = await fetch('/api/me', { credentials: 'include' });
     const data = await res.json();
-    if (data.success) {  // ← 改成 success
+    if (data.success) {
       setUser(data.user);
       fetchFiles();
     } else {
       setUser(null);
     }
   };
+
   const fetchFiles = () => {
     fetch('/api/files', { credentials: 'include' })
       .then(res => {
@@ -30,33 +34,33 @@ function App() {
         return res.json();
       })
       .then(data => {
-        console.log('📁 File List Raw Response:', data);
+        console.log('📁 Files response:', data);
         
-        // 处理两种可能的响应格式
+        // Handle different response formats
         let fileList;
         if (Array.isArray(data)) {
-          // 格式 1: 直接返回数组
           fileList = data;
         } else if (data.success && Array.isArray(data.files)) {
-          // 格式 2: { success: true, files: [...] }
           fileList = data.files;
         } else {
           throw new Error('Invalid response format');
         }
-
-        console.log('📁 File list after processing:', fileList);
+        
+        console.log('📁 Processed file list:', fileList);
         setFiles(fileList);
         setError(null);
       })
       .catch(err => {
         console.error('Error fetching files:', err);
-        setError('Unable to load file list');
+        setError('Failed to load file list');
         setFiles([]);
       });
   };
+
   useEffect(() => {
     fetchMe();
   }, []);
+
   const handleAuth = async () => {
     const url = `/api/${mode}`;
     const res = await fetch(url, {
@@ -72,168 +76,170 @@ function App() {
       alert(data.message || 'Auth failed');
     }
   };
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/logout', { 
-        method: 'POST',
-        credentials: 'include' 
-      });
-      
-      // 清除所有状态
-      setUser(null);
-      setFiles([]);
-      setSelectedFile(null);
-      setError(null);
 
-      console.log('✅ Logout successfully');
-    } catch (err) {
-      console.error('❌ Logout failed:', err);
-      // 即使失败也清除状态
-      setUser(null);
-      setFiles([]);
-      setSelectedFile(null);
-    }
+  const handleLogout = async () => {
+    await fetch('/api/logout', { 
+      method: 'POST',
+      credentials: 'include'
+    });
+    setUser(null);
+    setFiles([]);
+    setSelectedFile(null);
   };
-  const handleDelete = async (fileId) => {
-    if (!confirm('Are you sure you want to delete this file?')) return;
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this file?')) return;
     
-    try {
-      const res = await fetch(`/api/files/${fileId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      
-      if (res.ok) {
-        alert('Deleted successfully');
-        if (selectedFile && selectedFile.id === fileId) {
-          setSelectedFile(null);
-        }
-        fetchFiles();
-      } else {
-        alert('Delete failed');
+    const res = await fetch(`/api/files/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    
+    if (res.ok) {
+      fetchFiles();
+      if (selectedFile && selectedFile.id === id) {
+        setSelectedFile(null);
       }
-    } catch (err) {
-      console.error('Delete error:', err);
+    } else {
       alert('Delete failed');
     }
   };
-  // ⭐ 新增：下载文件函数
-  const handleDownload = async (fileId, filename) => {
+
+  const handleDownload = async (id, filename) => {
     try {
-      const res = await fetch(`/api/files/${fileId}/download`, {
+      const res = await fetch(`/api/files/${id}/download`, {
         credentials: 'include',
       });
       
-      if (!res.ok) {
-        throw new Error('Download failed');
-      }
+      if (!res.ok) throw new Error('Download failed');
       
       const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Download error:', err);
       alert('Download failed');
     }
   };
+
   const formatSize = (bytes) => {
-    if (!bytes) return 'N/A';
-    const kb = bytes / 1024;
-    if (kb < 1024) return `${kb.toFixed(1)} KB`;
-    return `${(kb / 1024).toFixed(1)} MB`;
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
   };
+
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString) return 'Unknown';
     const date = new Date(dateString);
-    return date.toLocaleString('zh-CN', {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return date.toLocaleString();
   };
+
+  // Auth screen
   if (!user) {
     return (
       <div style={styles.authContainer}>
         <div style={styles.authForm}>
-          <h2 style={styles.authTitle}>{mode === 'login' ? '🎵 Login' : '🎵 Register'}</h2>
+          <h1 style={styles.authTitle}>
+            {mode === 'login' ? '🎵 Login' : '🎵 Register'}
+          </h1>
+          
           <input
             type="text"
             placeholder="Username"
             value={form.username}
-            onChange={e => setForm({ ...form, username: e.target.value })}
+            onChange={(e) => setForm({ ...form, username: e.target.value })}
             style={styles.input}
-            onKeyPress={e => e.key === 'Enter' && handleAuth()}
+            onKeyPress={(e) => e.key === 'Enter' && handleAuth()}
           />
+          
           <input
             type="password"
             placeholder="Password"
             value={form.password}
-            onChange={e => setForm({ ...form, password: e.target.value })}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
             style={styles.input}
-            onKeyPress={e => e.key === 'Enter' && handleAuth()}
+            onKeyPress={(e) => e.key === 'Enter' && handleAuth()}
           />
-          <button onClick={handleAuth} style={styles.primaryButton}>
+          
+          <button onClick={handleAuth} style={styles.authButton}>
             {mode === 'login' ? 'Login' : 'Register'}
           </button>
-          <p style={styles.switchMode}>
-            {mode === 'login' ? 'No account?' : 'Already have an account?'}{' '}
-            <span
-              onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-              style={styles.linkButton}
-            >
-              {mode === 'login' ? 'Register' : 'Login'}
-            </span>
-          </p>
+          
+          <div style={styles.toggleMode}>
+            {mode === 'login' ? (
+              <>
+                Don't have an account?{' '}
+                <span onClick={() => setMode('register')} style={styles.link}>
+                  Register
+                </span>
+              </>
+            ) : (
+              <>
+                Already have an account?{' '}
+                <span onClick={() => setMode('login')} style={styles.link}>
+                  Login
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
   }
+
+  // Main app
   return (
-    <div style={styles.container}>
+    <div style={styles.appContainer}>
       {/* Header */}
       <div style={styles.header}>
-        <h1 style={styles.mainTitle}>🎵 Audio Management System</h1>
-        <div style={styles.userInfo}>
-          <span style={styles.username}>Welcome, {user.username}</span>
-          {user.role === 'admin' && <span style={styles.adminBadge}>Admin</span>}
-          <button onClick={handleLogout} style={styles.logoutButton}>Logout</button>
+        <h1 style={styles.headerTitle}>🎵 Audio Analysis Platform</h1>
+        <div style={styles.headerActions}>
+          <span style={styles.username}>👤 {user.username}</span>
+          <button onClick={handleLogout} style={styles.logoutButton}>
+            Logout
+          </button>
         </div>
       </div>
-      {/* Main Content - Two Column Layout */}
+
+      {/* Main Content */}
       <div style={styles.mainContent}>
-        {/* Left Column - Recorder and File List */}
+        {/* Left Column - Files */}
         <div style={styles.leftColumn}>
-          {/* Recorder Section */}
+          {/* Upload Section */}
           <div style={styles.card}>
-            <h2 style={styles.cardTitle}>🎤 Recording and Upload</h2>
-            
-            {/* 录音功能 */}
-            <Recorder onUploadSuccess={fetchFiles} />
-            
-            {/* 分隔线 */}
-            <div style={styles.divider}>OR</div>
-            
-            {/* 文件上传 */}
+            <h2 style={styles.cardTitle}>📤 Upload Audio</h2>
             <FileUploader onUploadSuccess={fetchFiles} />
           </div>
-          {/* File List Section */}
+
+          {/* Record Section */}
           <div style={styles.card}>
-            <h2 style={styles.cardTitle}>📁 List of Files ({files.length})</h2>
+            <h2 style={styles.cardTitle}>🎤 Record Audio</h2>
+            <Recorder onUploadSuccess={fetchFiles} />
+          </div>
+
+          {/* Files List */}
+          <div style={styles.card}>
+            <h2 style={styles.cardTitle}>📁 My Files ({files.length})</h2>
             
-            {error && <p style={styles.error}>{error}</p>}
+            {error && (
+              <div style={styles.errorMessage}>{error}</div>
+            )}
             
             {files.length === 0 ? (
-              <p style={styles.emptyMessage}>No files uploaded yet</p>
+              <div style={styles.emptyState}>
+                <div style={styles.emptyIcon}>📭</div>
+                <p>No files yet</p>
+                <p style={styles.emptyHint}>Upload or record your first audio file</p>
+              </div>
             ) : (
-              <div style={styles.fileList}>
-                {files.map(file => (
+              <div style={styles.filesList}>
+                {files.map((file) => (
                   <div 
                     key={file.id} 
                     style={{
@@ -241,7 +247,7 @@ function App() {
                       ...(selectedFile && selectedFile.id === file.id ? styles.fileItemSelected : {})
                     }}
                     onClick={() => {
-                      console.log('🎵 Choose files:', file);
+                      console.log('🎵 Selected file:', file);
                       setSelectedFile(file);
                     }}
                   >
@@ -258,11 +264,11 @@ function App() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          console.log('▶️ Display file:', file);
+                          console.log('▶️ Play file:', file);
                           setSelectedFile(file);
                         }}
                         style={styles.iconButton}
-                        title="播放"
+                        title="Play"
                       >
                         {selectedFile && selectedFile.id === file.id ? '⏸' : '▶️'}
                       </button>
@@ -273,7 +279,7 @@ function App() {
                           handleDownload(file.id, file.filename);
                         }}
                         style={styles.iconButton}
-                        title="下载"
+                        title="Download"
                       >
                         ⬇️
                       </button>
@@ -284,7 +290,7 @@ function App() {
                           handleDelete(file.id);
                         }}
                         style={styles.iconButtonDanger}
-                        title="删除"
+                        title="Delete"
                       >
                         🗑️
                       </button>
@@ -295,6 +301,7 @@ function App() {
             )}
           </div>
         </div>
+
         {/* Right Column - Player and Analysis */}
         <div style={styles.rightColumn}>
           {selectedFile ? (
@@ -310,39 +317,45 @@ function App() {
                   autoPlay
                   style={styles.audioPlayer}
                   onError={(e) => {
-                    console.error('❌ 音频加载错误:', e);
+                    console.error('❌ Audio loading error:', e);
                     console.error('URL:', selectedFile.url);
-                    alert('音频加载失败，请检查后端日志');
+                    alert('Audio loading failed, please check backend logs');
                   }}
                   onLoadedMetadata={() => {
-                    console.log('✅ 音频加载成功');
+                    console.log('✅ Audio loaded successfully');
                   }}
                 />
                 
                 <div style={styles.fileInfo}>
-                  <div><strong>File size :</strong> {formatSize(selectedFile.size)}</div>
-                  <div><strong>Upload time:</strong> {formatDate(selectedFile.upload_time || selectedFile.created_at)}</div>
+                  <div><strong>File Size:</strong> {formatSize(selectedFile.size)}</div>
+                  <div><strong>Upload Time:</strong> {formatDate(selectedFile.upload_time || selectedFile.created_at)}</div>
                   {selectedFile.username && (
                     <div><strong>Uploader:</strong> {selectedFile.username}</div>
                   )}
                 </div>
               </div>
+
               {/* Waveform Section */}
               <div style={styles.card}>
                 <h3 style={styles.cardTitle}>📊 Waveform</h3>
                 <Waveform audioUrl={selectedFile.url} />
               </div>
-              <AudioFilter audioRef={audioRef.current} />
-              {/* Unified Audio Analysis */}
-              <AudioAnalysis audioRef={audioRef.current} />
-              {/* <AudioFilter audioRef={audioRef.current} /> */}
+
+              {/* 🔥 WRAPPED WITH SHARED CONTEXT PROVIDER */}
+              <AudioContextProvider audioRef={audioRef.current}>
+                {/* Audio Filter */}
+                <AudioFilter audioRef={audioRef.current} />
+                
+                {/* Audio Analysis */}
+                <AudioAnalysis audioRef={audioRef.current} />
+              </AudioContextProvider>
             </>
           ) : (
             <div style={styles.card}>
               <div style={styles.placeholder}>
                 <div style={styles.placeholderIcon}>🎵</div>
-                <h3>Choose a file to play</h3>
-                <p>Click any file in the file list on the left.</p>
+                <h3>Select a file to start playing</h3>
+                <p>Click any file in the list on the left</p>
               </div>
             </div>
           )}
@@ -351,6 +364,7 @@ function App() {
     </div>
   );
 }
+
 const styles = {
   // Auth Styles
   authContainer: {
@@ -384,7 +398,7 @@ const styles = {
     boxSizing: 'border-box',
     transition: 'border-color 0.3s',
   },
-  primaryButton: {
+  authButton: {
     width: '100%',
     padding: '1rem',
     background: '#667eea',
@@ -392,89 +406,78 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     fontSize: '1.1rem',
-    cursor: 'pointer',
     fontWeight: '600',
+    cursor: 'pointer',
     transition: 'background 0.3s',
   },
-  linkButton: {
-    color: '#667eea',
-    cursor: 'pointer',
-    textDecoration: 'underline',
-    fontWeight: '600',
-  },
-  switchMode: {
+  toggleMode: {
     marginTop: '1.5rem',
     textAlign: 'center',
+    fontSize: '0.95rem',
     color: '#666',
   },
-  // Main Layout
-  container: {
+  link: {
+    color: '#667eea',
+    cursor: 'pointer',
+    fontWeight: '600',
+  },
+
+  // App Styles
+  appContainer: {
     minHeight: '100vh',
-    background: '#f5f7fa',
-    padding: '2rem',
+    background: '#f5f5f5',
   },
   header: {
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    color: 'white',
+    padding: '1.5rem 2rem',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '2rem',
-    padding: '1.5rem 2rem',
-    background: 'white',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
   },
-  mainTitle: {
+  headerTitle: {
     margin: 0,
     fontSize: '1.75rem',
-    color: '#333',
+    fontWeight: '700',
   },
-  userInfo: {
+  headerActions: {
     display: 'flex',
-    gap: '1rem',
     alignItems: 'center',
+    gap: '1rem',
   },
   username: {
     fontSize: '1rem',
-    color: '#666',
-  },
-  adminBadge: {
-    background: '#ffc107',
-    color: '#333',
-    padding: '0.375rem 0.875rem',
-    borderRadius: '16px',
-    fontSize: '0.875rem',
-    fontWeight: 'bold',
+    fontWeight: '500',
   },
   logoutButton: {
     padding: '0.625rem 1.25rem',
-    background: '#dc3545',
+    background: 'rgba(255,255,255,0.2)',
     color: 'white',
-    border: 'none',
+    border: '2px solid white',
     borderRadius: '8px',
     cursor: 'pointer',
-    fontSize: '0.95rem',
-    fontWeight: '500',
+    fontWeight: '600',
     transition: 'background 0.3s',
   },
-  // Two Column Layout
   mainContent: {
     display: 'grid',
-    gridTemplateColumns: '450px 1fr',
+    gridTemplateColumns: '400px 1fr',
     gap: '2rem',
-    alignItems: 'start',
+    padding: '2rem',
+    maxWidth: '1600px',
+    margin: '0 auto',
   },
   leftColumn: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '2rem',
+    gap: '1.5rem',
   },
   rightColumn: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '2rem',
-    minHeight: '600px',
+    gap: '1.5rem',
   },
-  // Card Styles
   card: {
     background: 'white',
     padding: '1.5rem',
@@ -482,37 +485,66 @@ const styles = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
   },
   cardTitle: {
-    margin: '0 0 1.25rem 0',
+    margin: '0 0 1rem 0',
     fontSize: '1.25rem',
     color: '#333',
     fontWeight: '600',
   },
-  // File List
-  fileList: {
+  audioPlayer: {
+    width: '100%',
+    marginBottom: '1rem',
+  },
+  fileInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem',
+    fontSize: '0.9rem',
+    color: '#666',
+  },
+  errorMessage: {
+    padding: '1rem',
+    background: '#fee',
+    color: '#c33',
+    borderRadius: '8px',
+    marginBottom: '1rem',
+  },
+  emptyState: {
+    textAlign: 'center',
+    padding: '3rem 1rem',
+    color: '#999',
+  },
+  emptyIcon: {
+    fontSize: '3rem',
+    marginBottom: '1rem',
+  },
+  emptyHint: {
+    fontSize: '0.9rem',
+    marginTop: '0.5rem',
+  },
+  filesList: {
     display: 'flex',
     flexDirection: 'column',
     gap: '0.75rem',
-    maxHeight: '500px',
+    maxHeight: '600px',
     overflowY: 'auto',
-    padding: '0.5rem',
   },
   fileItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '1rem',
     padding: '1rem',
     background: '#f8f9fa',
     borderRadius: '8px',
-    border: '2px solid transparent',
     cursor: 'pointer',
     transition: 'all 0.2s',
+    border: '2px solid transparent',
   },
   fileItemSelected: {
     background: '#e7f3ff',
     borderColor: '#667eea',
   },
   fileIcon: {
-    fontSize: '2rem',
+    fontSize: '1.5rem',
+    marginRight: '1rem',
   },
   fileDetails: {
     flex: 1,
@@ -520,10 +552,11 @@ const styles = {
   },
   fileName: {
     fontWeight: '600',
+    color: '#333',
     marginBottom: '0.25rem',
-    whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
   fileMeta: {
     fontSize: '0.8rem',
@@ -535,38 +568,23 @@ const styles = {
   },
   iconButton: {
     padding: '0.5rem',
-    background: '#f0f0f0',
-    border: 'none',
+    background: 'white',
+    border: '2px solid #e0e0e0',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '1rem',
-    transition: 'background 0.2s',
+    transition: 'all 0.2s',
   },
   iconButtonDanger: {
     padding: '0.5rem',
-    background: '#ffe0e0',
-    border: 'none',
+    background: 'white',
+    border: '2px solid #fee',
+    color: '#c33',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '1rem',
-    transition: 'background 0.2s',
+    transition: 'all 0.2s',
   },
-  // Player
-  audioPlayer: {
-    width: '100%',
-    marginBottom: '1rem',
-  },
-  fileInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem',
-    fontSize: '0.9rem',
-    color: '#666',
-    padding: '1rem',
-    background: '#f8f9fa',
-    borderRadius: '8px',
-  },
-  // Placeholder
   placeholder: {
     textAlign: 'center',
     padding: '4rem 2rem',
@@ -576,26 +594,6 @@ const styles = {
     fontSize: '4rem',
     marginBottom: '1rem',
   },
-  // Messages
-  error: {
-    color: '#dc3545',
-    padding: '1rem',
-    background: '#f8d7da',
-    borderRadius: '8px',
-    marginBottom: '1rem',
-  },
-  emptyMessage: {
-    textAlign: 'center',
-    color: '#999',
-    padding: '2rem',
-  },
-  divider: {
-    margin: '1.5rem 0',
-    padding: '0.75rem',
-    textAlign: 'center',
-    color: '#999',
-    fontSize: '0.9rem',
-    fontWeight: '600',
-  },
 };
+
 export default App;

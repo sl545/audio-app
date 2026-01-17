@@ -24,51 +24,102 @@ function AudioFilter({ audioRef }) {
   const animationRef = useRef(null);
 
   // 初始化音频上下文和滤波器
+  // const initAudioFilter = () => {
+  //   if (!audioRef || isInitializedRef.current) return;
+
+  //   try {
+  //     // 创建音频上下文
+  //     const context = new (window.AudioContext || window.webkitAudioContext)();
+      
+  //     // 创建音频源（从 audio 元素）
+  //     const source = context.createMediaElementSource(audioRef);
+      
+  //     // 创建滤波器节点
+  //     const filter = context.createBiquadFilter();
+  //     filter.type = filterType;
+  //     filter.frequency.value = frequency;
+  //     filter.Q.value = q;
+  //     filter.gain.value = gain;
+      
+  //     // 创建分析器（用于可视化）
+  //     const analyzer = context.createAnalyser();
+  //     analyzer.fftSize = 2048;
+  //     analyzer.smoothingTimeConstant = 0.8;
+      
+  //     // 连接节点：source → filter → analyzer → destination
+  //     source.connect(filter);
+  //     filter.connect(analyzer);
+  //     analyzer.connect(context.destination);
+      
+  //     // 保存引用
+  //     audioContextRef.current = context;
+  //     sourceRef.current = source;
+  //     filterRef.current = filter;
+  //     analyzerRef.current = analyzer;
+  //     isInitializedRef.current = true;
+
+  //     console.log('✅ Audio filter initialization successful');
+
+  //     // 开始可视化
+  //     if (isEnabled) {
+  //       startVisualization();
+  //     }
+      
+  //   } catch (err) {
+  //     console.error('❌ Audio filter initialization failed:', err);
+  //   }
+  // };
+
   const initAudioFilter = () => {
-    if (!audioRef || isInitializedRef.current) return;
+  if (!audioRef || isInitializedRef.current) return;
+  if (!contextReady || !sharedContext || !sharedSource) {
+    console.log('⏳ Waiting for shared context...');
+    setTimeout(initAudioFilter, 500);
+    return;
+  }
 
-    try {
-      // 创建音频上下文
-      const context = new (window.AudioContext || window.webkitAudioContext)();
-      
-      // 创建音频源（从 audio 元素）
-      const source = context.createMediaElementSource(audioRef);
-      
-      // 创建滤波器节点
-      const filter = context.createBiquadFilter();
-      filter.type = filterType;
-      filter.frequency.value = frequency;
-      filter.Q.value = q;
-      filter.gain.value = gain;
-      
-      // 创建分析器（用于可视化）
-      const analyzer = context.createAnalyser();
-      analyzer.fftSize = 2048;
-      analyzer.smoothingTimeConstant = 0.8;
-      
-      // 连接节点：source → filter → analyzer → destination
-      source.connect(filter);
-      filter.connect(analyzer);
-      analyzer.connect(context.destination);
-      
-      // 保存引用
-      audioContextRef.current = context;
-      sourceRef.current = source;
-      filterRef.current = filter;
-      analyzerRef.current = analyzer;
-      isInitializedRef.current = true;
+  try {
+    console.log('🎛️ Initializing AudioFilter with shared context...');
 
-      console.log('✅ Audio filter initialization successful');
-
-      // 开始可视化
-      if (isEnabled) {
-        startVisualization();
-      }
-      
-    } catch (err) {
-      console.error('❌ Audio filter initialization failed:', err);
+    // Create filter node
+    const filter = sharedContext.createBiquadFilter();
+    filter.type = filterType;
+    filter.frequency.value = frequency;
+    filter.Q.value = q;
+    filter.gain.value = gain;
+    
+    // Create analyzer for visualization
+    const analyzer = sharedContext.createAnalyser();
+    analyzer.fftSize = 2048;
+    analyzer.smoothingTimeConstant = 0.8;
+    
+    // Create gain node for connection
+    const gainNode = sharedContext.createGain();
+    gainNode.gain.value = 1;
+    
+    // Connect: sharedSource → filter → analyzer → gainNode → destination
+    sharedSource.connect(filter);
+    filter.connect(analyzer);
+    analyzer.connect(gainNode);
+    gainNode.connect(sharedContext.destination);
+    
+    // Save references
+    audioContextRef.current = sharedContext;
+    sourceRef.current = sharedSource;
+    filterRef.current = filter;
+    analyzerRef.current = analyzer;
+    isInitializedRef.current = true;
+    
+    console.log('✅ AudioFilter initialized with shared context');
+    
+    if (isEnabled) {
+      startVisualization();
     }
-  };
+    
+  } catch (err) {
+    console.error('❌ AudioFilter initialization failed:', err);
+  }
+};
 
   // 更新滤波器参数
   useEffect(() => {
